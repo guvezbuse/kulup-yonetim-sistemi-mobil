@@ -1,0 +1,1 @@
+# kulup-yonetim-sistemi-mobil
