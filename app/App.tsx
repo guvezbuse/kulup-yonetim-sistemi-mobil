@@ -1,21 +1,17 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import "./global.css";
+import { StatusBar } from "expo-status-bar";
+import { Text, View } from "react-native";
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text style={{ fontSize: 24, fontWeight: 'bold' }}>Merhaba Kulüp Yönetim Sistemi!</Text>
-
-      <StatusBar style="auto" />
+    <View className="flex-1 items-center justify-center bg-slate-900 px-4">
+      <Text className="text-2xl font-bold text-white text-center">
+        Kulüp Yönetim Sistemi
+      </Text>
+      <Text className="mt-2 text-sm text-emerald-400 font-semibold">
+        ✓ NativeWind & Tailwind Başarıyla Çalışıyor!
+      </Text>
+      <StatusBar style="light" />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
