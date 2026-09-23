@@ -4,7 +4,7 @@
 
 ---
 
-## 🛠️ Teknoloji Yığını
+## 🛠️ Teknoloji
 
 * **Çatı (Framework):** React Native (Expo SDK 57)
 * **Programlama Dili:** TypeScript
