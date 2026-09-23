@@ -5,7 +5,7 @@ export type MembershipStatus = 'beklemede' | 'aktif' | 'pasif' | 'reddedildi';
 export type EventStatus = 'taslak' | 'yayınlanan' | 'tamamlanan' | 'iptal';
 export type RSVPStatus = 'katılıyor' | 'katılmıyor' | 'beklemede';
 export type AnnouncementScope = 'sistem' | 'kulüp';
-export type TargetAudience = 'Tüm Yöneticiler' | 'Tüm Üyeler';
+export type TargetAudience = 'Tüm Yöneticiler' | 'Tüm Üyeler'| 'Herkes';
 
 // 1. Kullanıcı Modeli (Sistem geneli hesap)
 export interface User {

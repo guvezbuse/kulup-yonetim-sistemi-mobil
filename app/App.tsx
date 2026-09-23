@@ -1,17 +1,52 @@
 import "./global.css";
+import React, { useState } from "react";
 import { StatusBar } from "expo-status-bar";
-import { Text, View } from "react-native";
+import { LoginScreen } from "./screens/LoginScreen";
+import { RegisterScreen } from "./screens/RegisterScreen";
+import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
+import { ClubsScreen } from "./screens/ClubsScreen";
+
+type CurrentScreen = "login" | "register" | "forgot" | "clubs";
 
 export default function App() {
+  const [currentScreen, setCurrentScreen] = useState<CurrentScreen>("clubs");
+  const [userEmail, setUserEmail] = useState("guvezbuse@gmail.com");
+
   return (
-    <View className="flex-1 items-center justify-center bg-slate-900 px-4">
-      <Text className="text-2xl font-bold text-white text-center">
-        Kulüp Yönetim Sistemi
-      </Text>
-      <Text className="mt-2 text-sm text-emerald-400 font-semibold">
-        ✓ NativeWind & Tailwind Başarıyla Çalışıyor!
-      </Text>
+    <>
       <StatusBar style="light" />
-    </View>
+
+      {currentScreen === "login" && (
+        <LoginScreen
+          onNavigateToRegister={() => setCurrentScreen("register")}
+          onNavigateToForgot={() => setCurrentScreen("forgot")}
+          onLoginSuccess={(email) => {
+            if (email) setUserEmail(email);
+            setCurrentScreen("clubs");
+          }}
+        />
+      )}
+
+      {currentScreen === "register" && (
+        <RegisterScreen
+          onNavigateToLogin={() => setCurrentScreen("login")}
+          onRegisterSuccess={() => setCurrentScreen("clubs")}
+        />
+      )}
+
+      {currentScreen === "forgot" && (
+        <ForgotPasswordScreen onNavigateToLogin={() => setCurrentScreen("login")} />
+      )}
+
+      {currentScreen === "clubs" && (
+        <ClubsScreen
+          userEmail={userEmail}
+          onLogout={() => setCurrentScreen("login")}
+          onSelectClub={(club) => {
+            console.log("Seçilen kulüp:", club.ad);
+          }}
+        />
+      )}
+    </>
   );
 }
