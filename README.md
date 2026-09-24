@@ -6,7 +6,7 @@
 
 ## 🛠️ Teknoloji
 
-* **Çatı (Framework):** React Native (Expo SDK 57)
+* **Framework:** React Native (Expo SDK 57)
 * **Programlama Dili:** TypeScript
 * **Stil & Arayüz:** NativeWind (Tailwind CSS v4)
 * **Kod Standartları:** ESLint & Prettier
