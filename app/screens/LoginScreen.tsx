@@ -1,73 +1,145 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Input } from "../components/Input";
+import {
+  View,
+  Text,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableOpacity,
+} from "react-native";
 import { Button } from "../components/Button";
+import { Input } from "../components/Input";
 import { Card } from "../components/Card";
+import { useAuthStore } from "../store/authStore";
 
-interface LoginScreenProps {
-  onNavigateToRegister: () => void;
-  onNavigateToForgot: () => void;
-  onLoginSuccess: (email?: string) => void;
+export interface LoginScreenProps {
+  onNavigateToRegister?: () => void;
+  onNavigateToForgotPassword?: () => void;
+  onNavigateRegister?: () => void;
+  onNavigateForgotPassword?: () => void;
+  onLoginSuccess?: () => void;
+  onLogin?: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({
-  onNavigateToRegister,
-  onNavigateToForgot,
-  onLoginSuccess,
-}) => {
+export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const login = useAuthStore((state) => state.login);
 
-  const handleLogin = () => {
+  const handleNavigateRegister = () => {
+    if (props.onNavigateToRegister) {
+      props.onNavigateToRegister();
+    } else if (props.onNavigateRegister) {
+      props.onNavigateRegister();
+    }
+  };
+
+  const handleNavigateForgot = () => {
+    if (props.onNavigateToForgotPassword) {
+      props.onNavigateToForgotPassword();
+    } else if (props.onNavigateForgotPassword) {
+      props.onNavigateForgotPassword();
+    } else {
+      Alert.alert("Bilgi", "Şifremi unuttum yönlendirme fonksiyonu atanmamış.");
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert("Uyarı", "Lütfen e-posta ve şifrenizi girin.");
+      return;
+    }
+
     setLoading(true);
-    // Plana göre mock: her giriş doğrudan başarılı sayılır
-    setTimeout(() => {
+    try {
+      await login(email.trim(), password);
+      if (props.onLoginSuccess) {
+        props.onLoginSuccess();
+      } else if (props.onLogin) {
+        props.onLogin();
+      }
+    } catch (error: any) {
+      let msg = "Giriş yapılırken bir hata oluştu.";
+      if (error.code === "auth/invalid-email") {
+        msg = "Geçersiz e-posta formatı.";
+      } else if (
+        error.code === "auth/user-not-found" ||
+        error.code === "auth/wrong-password" ||
+        error.code === "auth/invalid-credential"
+      ) {
+        msg = "E-posta veya şifre hatalı.";
+      } else if (error.message) {
+        msg = error.message;
+      }
+      Alert.alert("Giriş Başarısız", msg);
+    } finally {
       setLoading(false);
-      onLoginSuccess(email.trim() || "demo@ogrenci.edu.tr");
-    }, 600);
+    }
   };
 
   return (
-    <SafeAreaView className="flex-1 justify-center px-6 bg-slate-900">
-      <View className="mb-8 items-center">
-        <Text className="text-3xl font-extrabold text-white tracking-tight">Kulüp Yönetimi</Text>
-        <Text className="text-slate-400 text-sm mt-1">Hesabınıza giriş yapın</Text>
-      </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-slate-900 justify-center px-4"
+    >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Card className="p-6 bg-slate-800/90 border border-slate-700">
+          <Text className="text-white text-2xl font-bold text-center mb-1">Kulüp Yönetimi</Text>
+          <Text className="text-slate-400 text-sm text-center mb-6">Hesabınıza giriş yapın</Text>
 
-      <Card>
-        <Input
-          label="E-posta Adresi"
-          placeholder="ornek@ogrenci.edu.tr"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <Input
-          label="Şifre"
-          placeholder="••••••••"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+          <View className="gap-4">
+            <Input
+              label="E-posta"
+              placeholder="ornek@universite.edu.tr"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
 
-        <View className="items-end mb-4">
-          <TouchableOpacity onPress={onNavigateToForgot}>
-            <Text className="text-xs text-indigo-400 font-medium">Şifremi Unuttum?</Text>
-          </TouchableOpacity>
-        </View>
+            <Input
+              label="Şifre"
+              placeholder="••••••••"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
 
-        <Button title="Giriş Yap" onPress={handleLogin} loading={loading} />
-      </Card>
+            <TouchableOpacity
+              onPress={handleNavigateForgot}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              activeOpacity={0.7}
+              className="self-end py-1 px-2"
+            >
+              <Text className="text-indigo-400 text-xs font-semibold">Şifremi Unuttum</Text>
+            </TouchableOpacity>
 
-      <View className="flex-row justify-center mt-6">
-        <Text className="text-slate-400 text-sm">Hesabınız yok mu? </Text>
-        <TouchableOpacity onPress={onNavigateToRegister}>
-          <Text className="text-indigo-400 font-semibold text-sm">Kayıt Ol</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+            <Button
+              title={loading ? "Giriş Yapılıyor..." : "Giriş Yap"}
+              variant="primary"
+              onPress={handleLogin}
+              disabled={loading}
+              className="mt-2"
+            />
+
+            <View className="flex-row justify-center items-center mt-4">
+              <Text className="text-slate-400 text-xs">Hesabınız yok mu? </Text>
+              <TouchableOpacity
+                onPress={handleNavigateRegister}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.7}
+              >
+                <Text className="text-indigo-400 text-xs font-bold">Kayıt Ol</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };

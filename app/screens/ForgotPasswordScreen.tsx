@@ -1,63 +1,110 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
-import { Input } from "../components/Input";
+import {
+  View,
+  Text,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableOpacity,
+} from "react-native";
 import { Button } from "../components/Button";
+import { Input } from "../components/Input";
 import { Card } from "../components/Card";
+import { useAuthStore } from "../store/authStore";
 
-interface ForgotPasswordScreenProps {
+export interface ForgotPasswordScreenProps {
   onNavigateToLogin: () => void;
+  onNavigateLogin?: () => void;
 }
 
 export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   onNavigateToLogin,
+  onNavigateLogin,
 }) => {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const resetPassword = useAuthStore((state) => state.resetPassword);
 
-  const handleResetPassword = () => {
+  const handleBackToLogin = () => {
+    if (onNavigateToLogin) onNavigateToLogin();
+    else if (onNavigateLogin) onNavigateLogin();
+  };
+
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert("Uyarı", "Lütfen e-posta adresinizi girin.");
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // Gerçek Firebase şifre sıfırlama çağrısı
+      await resetPassword(email.trim());
       Alert.alert(
-        "Bağlantı Gönderildi",
-        "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi (Mock).",
-        [{ text: "Tamam", onPress: onNavigateToLogin }],
+        "E-posta Gönderildi",
+        "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi. Lütfen gelen kutunuzu (ve spam klasörünü) kontrol edin.",
+        [{ text: "Tamam", onPress: handleBackToLogin }],
       );
-    }, 800);
+    } catch (error: any) {
+      let msg = "İşlem sırasında bir hata oluştu.";
+      if (error.code === "auth/user-not-found") {
+        msg = "Bu e-posta adresine ait bir hesap bulunamadı.";
+      } else if (error.code === "auth/invalid-email") {
+        msg = "Geçersiz e-posta adresi girdiniz.";
+      } else if (error.message) {
+        msg = error.message;
+      }
+      Alert.alert("Hata", msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <View className="flex-1 justify-center px-6 bg-slate-900">
-      <View className="mb-8 items-center">
-        <Text className="text-3xl font-extrabold text-white tracking-tight">Şifre Sıfırlama</Text>
-        <Text className="text-slate-400 text-sm mt-1 text-center">
-          Hesabınıza ait e-posta adresinizi girin, sıfırlama bağlantısı gönderelim.
-        </Text>
-      </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-slate-900 justify-center px-4"
+    >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Card className="p-6 bg-slate-800/90 border border-slate-700">
+          <Text className="text-white text-2xl font-bold text-center mb-1">Şifremi Unuttum</Text>
+          <Text className="text-slate-400 text-sm text-center mb-6">
+            Kayıtlı e-posta adresinize sıfırlama bağlantısı göndereceğiz.
+          </Text>
 
-      <Card>
-        <Input
-          label="E-posta Adresi"
-          placeholder="ornek@ogrenci.edu.tr"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
+          <View className="gap-4">
+            <Input
+              label="E-posta"
+              placeholder="ornek@universite.edu.tr"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
 
-        <Button
-          title="Sıfırlama Bağlantısı Gönder"
-          onPress={handleResetPassword}
-          loading={loading}
-          className="mt-2"
-        />
-      </Card>
+            <Button
+              title={loading ? "Gönderiliyor..." : "Sıfırlama Bağlantısı Gönder"}
+              variant="primary"
+              onPress={handleResetPassword}
+              disabled={loading}
+              className="mt-2"
+            />
 
-      <View className="flex-row justify-center mt-6">
-        <TouchableOpacity onPress={onNavigateToLogin}>
-          <Text className="text-indigo-400 font-semibold text-sm">Giriş Ekranına Dön</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+            <View className="flex-row justify-center items-center mt-4">
+              <TouchableOpacity
+                onPress={handleBackToLogin}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text className="text-indigo-400 text-xs font-bold">← Giriş Ekranına Dön</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };

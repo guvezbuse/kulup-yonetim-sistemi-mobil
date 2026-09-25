@@ -11,6 +11,7 @@ import MemberDashboardScreen from "./screens/MemberDashboardScreen";
 
 type ScreenType =
   "login" | "register" | "forgot-password" | "clubs" | "admin-panel" | "member-dashboard";
+
 type UserRole = "superadmin" | "clubadmin" | "member";
 
 export default function App() {
@@ -34,7 +35,7 @@ export default function App() {
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
-      {/* STATİK MOCK ROL SEÇİCİ */}
+      {/* STATİK MOCK ROL SEÇİCİ (Test Barı) */}
       {currentUser && (
         <View
           style={{
@@ -100,33 +101,28 @@ export default function App() {
         </View>
       )}
 
-      {/* EKRAN ROUTER */}
+      {/* EKRAN YÖNLENDİRİCİSİ */}
       <View style={{ flex: 1 }}>
         {currentScreen === "login" && (
           <LoginScreen
             onNavigateToRegister={() => setCurrentScreen("register")}
-            onNavigateToForgot={() => setCurrentScreen("forgot-password")}
+            onNavigateToForgotPassword={() => setCurrentScreen("forgot-password")}
             onLoginSuccess={handleLogin}
           />
         )}
-
         {currentScreen === "register" && (
           <RegisterScreen
-            onRegisterSuccess={handleLogin}
-            onNavigateLogin={() => setCurrentScreen("login")}
+            onNavigateToLogin={() => setCurrentScreen("login")}
             {...({
-              onNavigateToLogin: () => setCurrentScreen("login"),
+              onRegisterSuccess: handleLogin,
+              onSuccess: handleLogin,
+              onRegister: handleLogin,
             } as any)}
           />
         )}
 
         {currentScreen === "forgot-password" && (
-          <ForgotPasswordScreen
-            onNavigateToLogin={() => setCurrentScreen("login")}
-            {...({
-              onNavigateLogin: () => setCurrentScreen("login"),
-            } as any)}
-          />
+          <ForgotPasswordScreen onNavigateToLogin={() => setCurrentScreen("login")} />
         )}
 
         {currentScreen === "clubs" && (
