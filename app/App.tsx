@@ -11,6 +11,7 @@ import MemberDashboardScreen from "./screens/MemberDashboardScreen";
 import ClubManageScreen from "./screens/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import MemberIdCardScreen from "./screens/MemberIdCardScreen";
+import InviteAcceptScreen from "./screens/InviteAcceptScreen";
 import { useAuthStore } from "./store/authStore";
 import { Club } from "./types";
 
@@ -18,6 +19,7 @@ type ScreenType =
   | "login"
   | "register"
   | "forgot-password"
+  | "invite-accept"
   | "clubs"
   | "admin-panel"
   | "manage-club"
@@ -158,6 +160,7 @@ export default function App() {
           <LoginScreen
             onNavigateToRegister={() => setCurrentScreen("register")}
             onNavigateToForgotPassword={() => setCurrentScreen("forgot-password")}
+            onNavigateToInvite={() => setCurrentScreen("invite-accept")}
             onLoginSuccess={handleLoginSuccess}
           />
         )}
@@ -175,6 +178,14 @@ export default function App() {
 
         {currentScreen === "forgot-password" && (
           <ForgotPasswordScreen onNavigateToLogin={() => setCurrentScreen("login")} />
+        )}
+
+        {/* Kulüp Davet Kabul Ekranı */}
+        {currentScreen === "invite-accept" && (
+          <InviteAcceptScreen
+            onSuccess={() => setCurrentScreen("login")}
+            onCancel={() => setCurrentScreen("login")}
+          />
         )}
 
         {/* Kulüpler Ekranı */}

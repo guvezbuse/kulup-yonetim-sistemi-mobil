@@ -16,6 +16,7 @@ import { useAuthStore } from "../store/authStore";
 export interface LoginScreenProps {
   onNavigateToRegister?: () => void;
   onNavigateToForgotPassword?: () => void;
+  onNavigateToInvite?: () => void;
   onNavigateRegister?: () => void;
   onNavigateForgotPassword?: () => void;
   onLoginSuccess?: () => void;
@@ -43,6 +44,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
       props.onNavigateForgotPassword();
     } else {
       Alert.alert("Bilgi", "Şifremi unuttum yönlendirme fonksiyonu atanmamış.");
+    }
+  };
+
+  const handleNavigateInvite = () => {
+    if (props.onNavigateToInvite) {
+      props.onNavigateToInvite();
+    } else {
+      Alert.alert("Bilgi", "Davet kabul yönlendirmesi tanımlanmamış.");
     }
   };
 
@@ -137,6 +146,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
                 <Text className="text-indigo-400 text-xs font-bold">Kayıt Ol</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Kulüp Davet Kodu Kabul Butonu */}
+            <TouchableOpacity
+              onPress={handleNavigateInvite}
+              activeOpacity={0.7}
+              className="mt-2 py-2 items-center border border-amber-500/30 rounded-xl bg-amber-500/10"
+            >
+              <Text className="text-amber-400 text-xs font-semibold">
+                🎟️ Kulüp Davet Kodunuz mu Var? Buraya Tıklayın
+              </Text>
+            </TouchableOpacity>
           </View>
         </Card>
       </ScrollView>

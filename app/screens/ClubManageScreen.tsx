@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+  Linking,
+} from "react-native";
 import { Input } from "../components/Input";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -28,6 +36,8 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
   const [role, setRole] = useState<ClubRole>("üye");
   const [loading, setLoading] = useState(false);
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null);
+  const [invitedTargetEmail, setInvitedTargetEmail] = useState<string>("");
+  const [invitations, setInvitations] = useState<any[]>([]);
 
   // Başvurular ve Üyeler State'leri
   const [requests, setRequests] = useState<JoinRequestItem[]>([]);
@@ -41,12 +51,14 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
 
   const loadData = async () => {
     try {
-      const [reqData, memData] = await Promise.all([
+      const [reqData, memData, invData] = await Promise.all([
         membershipService.getPendingRequests(clubId),
         membershipService.getClubMembers(clubId),
+        invitationService.getPendingInvitations(clubId),
       ]);
       setRequests(reqData);
       setMembers(memData);
+      setInvitations(invData);
     } catch (e) {
       console.log("Veri çekme hatası:", e);
     } finally {
@@ -64,16 +76,18 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
       return;
     }
 
+    const currentTarget = email.trim();
     setLoading(true);
     setCreatedInviteLink(null);
     try {
-      const res = await invitationService.inviteUserToClub(clubId, email, role);
+      const res = await invitationService.inviteUserToClub(clubId, currentTarget, role);
 
       if (res.type === "invited" && res.inviteLink) {
         setCreatedInviteLink(res.inviteLink);
+        setInvitedTargetEmail(currentTarget);
         Alert.alert(
           "Davet Oluşturuldu! (72 Saat)",
-          `Kullanıcı henüz kayıtlı değil. Oluşturulan davet bağlantısını kopyalayıp öğrenciye iletebilirsiniz:\n\n${res.inviteLink}`,
+          `Kullanıcı henüz kayıtlı değil. Oluşturulan davet bağlantısını kopyalayabilir veya e-posta uygulamanızla doğrudan gönderebilirsiniz:\n\n${res.inviteLink}`,
         );
       } else {
         Alert.alert("Başarılı", res.message);
@@ -85,6 +99,38 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
       Alert.alert("Hata", err.message || "İşlem tamamlanamadı.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendEmailInvite = async () => {
+    if (!createdInviteLink || !invitedTargetEmail) return;
+
+    const subject = encodeURIComponent(`${clubName} Kulübü Üyelik / Görev Daveti`);
+    const body = encodeURIComponent(
+      `Merhaba,\n\n${clubName} kulübümüzün kadrosuna davet edildiniz!\n\nDavet bağlantınız (72 saat geçerlidir):\n${createdInviteLink}\n\nBağlantıya tıklayarak hesabınızı oluşturabilir ve kulübümüze katılabilirsiniz.\n\nİyi çalışmalar!`,
+    );
+    const handleResendInvite = async (invItem: any) => {
+      try {
+        const res = await invitationService.resendInvitation(invItem.id);
+        setCreatedInviteLink(res.newInviteLink);
+        setInvitedTargetEmail(invItem.email);
+        Alert.alert(
+          "Yeni Davet Linki Hazır! (72 Saat)",
+          `Token yenilendi:\n\n${res.newInviteLink}`,
+        );
+        loadData();
+      } catch (err: any) {
+        Alert.alert("Hata", err.message || "Davet yenilenemedi.");
+      }
+    };
+
+    const mailUrl = `mailto:${invitedTargetEmail}?subject=${subject}&body=${body}`;
+
+    const canOpen = await Linking.canOpenURL(mailUrl);
+    if (canOpen) {
+      await Linking.openURL(mailUrl);
+    } else {
+      Alert.alert("Hata", "Cihazınızda e-posta gönderebilecek bir uygulama bulunamadı.");
     }
   };
 
@@ -351,8 +397,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
           loading={loading}
         />
 
-        {/* Kopyalanabilir Davet Linki Kutusu (Şartname 4.3) */}
-        {/* Kopyalanabilir Davet Linki Kutusu (Şartname 4.3) */}
+        {/* Kopyalanabilir ve Mail ile Gönderilebilir Davet Kutusu */}
         {createdInviteLink && (
           <View className="mt-4 p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl">
             <Text className="text-amber-400 font-bold text-xs mb-2">
@@ -365,15 +410,26 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
               </Text>
             </View>
 
-            <TouchableOpacity
-              onPress={async () => {
-                await Clipboard.setStringAsync(createdInviteLink);
-                Alert.alert("Kopyalandı! 📋", "Davet bağlantısı panoya kopyalandı.");
-              }}
-              className="bg-amber-600/80 active:bg-amber-600 py-2 rounded-lg items-center flex-row justify-center gap-1.5"
-            >
-              <Text className="text-white text-xs font-bold">📋 Bağlantıyı Panoya Kopyala</Text>
-            </TouchableOpacity>
+            <View className="gap-2">
+              <TouchableOpacity
+                onPress={async () => {
+                  await Clipboard.setStringAsync(createdInviteLink);
+                  Alert.alert("Kopyalandı! 📋", "Davet bağlantısı panoya kopyalandı.");
+                }}
+                className="bg-amber-600/80 active:bg-amber-600 py-2.5 rounded-lg items-center flex-row justify-center gap-1.5"
+              >
+                <Text className="text-white text-xs font-bold">📋 Bağlantıyı Panoya Kopyala</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSendEmailInvite}
+                className="bg-indigo-600 active:bg-indigo-700 py-2.5 rounded-lg items-center flex-row justify-center gap-1.5"
+              >
+                <Text className="text-white text-xs font-bold">
+                  ✉️ E-Posta ile Gönder (Gmail / Mail)
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </Card>
