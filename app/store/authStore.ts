@@ -25,7 +25,8 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   initializeAuthListener: () => () => void;
-  login: (email: string, pass: string) => Promise<void>;
+  fetchProfile: (uid: string) => Promise<UserProfile | null>;
+  login: (email: string, pass: string) => Promise<UserProfile | null>;
   register: (data: {
     name: string;
     surname: string;
@@ -38,7 +39,7 @@ interface AuthState {
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   profile: null,
   loading: true,
@@ -46,31 +47,36 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   clearError: () => set({ error: null }),
 
+  // Firestore'dan kullanıcı profilini çeken yardımcı fonksiyon
+  fetchProfile: async (uid: string): Promise<UserProfile | null> => {
+    try {
+      const userDoc = await getDoc(doc(db, "users", uid));
+      if (userDoc.exists()) {
+        const profileData = userDoc.data() as UserProfile;
+        set({ profile: profileData });
+        return profileData;
+      } else {
+        const fallbackProfile: UserProfile = {
+          uid,
+          email: auth.currentUser?.email || "",
+          is_admin: false,
+        };
+        set({ profile: fallbackProfile });
+        return fallbackProfile;
+      }
+    } catch (e) {
+      console.log("Profil verisi çekilemedi:", e);
+      return null;
+    }
+  },
+
+  // Uygulama açılışında oturum durumunu takip eden dinleyici
   initializeAuthListener: () => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
-            set({
-              user: firebaseUser,
-              profile: userDoc.data() as UserProfile,
-              loading: false,
-            });
-          } else {
-            set({
-              user: firebaseUser,
-              profile: {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email || "",
-                is_admin: false,
-              },
-              loading: false,
-            });
-          }
-        } catch (e) {
-          set({ user: firebaseUser, loading: false });
-        }
+        set({ user: firebaseUser });
+        await get().fetchProfile(firebaseUser.uid);
+        set({ loading: false });
       } else {
         set({ user: null, profile: null, loading: false });
       }
@@ -78,30 +84,38 @@ export const useAuthStore = create<AuthState>((set) => ({
     return unsubscribe;
   },
 
+  // Giriş yapma fonksiyonu: Giriş biter bitmez Firestore profilini garantiye alır
   login: async (email: string, pass: string) => {
     set({ loading: true, error: null });
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), pass);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+      const firebaseUser = userCredential.user;
+      set({ user: firebaseUser });
+
+      // Firestore profilini anında yükle ve döndür
+      const userProfile = await get().fetchProfile(firebaseUser.uid);
+      set({ loading: false });
+      return userProfile;
     } catch (err: any) {
       set({ error: err.message, loading: false });
       throw err;
     }
   },
 
+  // Kayıt olma fonksiyonu
   register: async ({ name, surname, email, pass, phone = "" }) => {
     set({ loading: true, error: null });
     try {
       const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
       const uid = res.user.uid;
 
-      // Gün 6 kuralı: users/{uid} dokümanı oluştur (ad, soyad, email, telefon, is_admin: false)
       const profileData: UserProfile = {
         uid,
         email: email.trim(),
         name,
         surname,
         phone,
-        is_admin: false,
+        is_admin: false, // Yeni kayıt olan her kullanıcı varsayılan olarak üye statüsündedir
       };
 
       await setDoc(doc(db, "users", uid), {
@@ -109,13 +123,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         createdAt: serverTimestamp(),
       });
 
-      set({ profile: profileData, loading: false });
+      set({ user: res.user, profile: profileData, loading: false });
     } catch (err: any) {
       set({ error: err.message, loading: false });
       throw err;
     }
   },
 
+  // Çıkış yapma fonksiyonu
   logout: async () => {
     set({ loading: true, error: null });
     try {
@@ -127,6 +142,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
+  // Şifre sıfırlama fonksiyonu
   resetPassword: async (email: string) => {
     set({ loading: true, error: null });
     try {

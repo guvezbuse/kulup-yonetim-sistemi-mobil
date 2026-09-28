@@ -7,10 +7,15 @@ import { Card } from "../components/Card";
 import { useAuthStore } from "../store/authStore";
 
 interface RegisterScreenProps {
-  onNavigateLogin: () => void;
+  onNavigateToLogin?: () => void;
+  onNavigateLogin?: () => void;
+  onRegisterSuccess?: () => void;
 }
 
-export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateLogin }) => {
+export const RegisterScreen: React.FC<RegisterScreenProps> = ({
+  onNavigateToLogin,
+  onNavigateLogin,
+}) => {
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
   const [email, setEmail] = useState("");
@@ -19,6 +24,15 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateLogin 
   const [loading, setLoading] = useState(false);
 
   const register = useAuthStore((state) => state.register);
+
+  // Her iki isimlendirmeyi de destekleyecek şekilde yönlendirme fonksiyonu:
+  const handleGoToLogin = () => {
+    if (onNavigateToLogin) {
+      onNavigateToLogin();
+    } else if (onNavigateLogin) {
+      onNavigateLogin();
+    }
+  };
 
   const handleRegister = async () => {
     if (!name.trim() || !surname.trim() || !email.trim() || !password) {
@@ -62,6 +76,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateLogin 
     <SafeAreaView className="flex-1 bg-slate-900 px-6 justify-center">
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
         contentContainerStyle={{ paddingVertical: 20 }}
       >
         <View className="mb-6 items-center">
@@ -98,9 +113,12 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateLogin 
           <Button title="Kayıt Ol" onPress={handleRegister} loading={loading} className="mt-2" />
         </Card>
 
-        <View className="flex-row justify-center mt-6">
+        <View className="flex-row justify-center mt-6 py-2">
           <Text className="text-slate-400 text-sm">Zaten hesabınız var mı? </Text>
-          <TouchableOpacity onPress={onNavigateLogin}>
+          <TouchableOpacity
+            onPress={handleGoToLogin}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          >
             <Text className="text-indigo-400 font-semibold text-sm">Giriş Yap</Text>
           </TouchableOpacity>
         </View>

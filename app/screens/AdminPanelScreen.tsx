@@ -1,195 +1,128 @@
-import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
-import { Card } from "../components/Card";
-import { Badge } from "../components/Badge";
+import React, { useState, useEffect } from "react";
+import { View, Text, FlatList, Alert, TouchableOpacity } from "react-native";
+import { Input } from "../components/Input";
 import { Button } from "../components/Button";
-
-type AdminTab = "members" | "applications" | "announcements" | "events";
+import { Card } from "../components/Card";
+import { clubService } from "../services/clubService";
+import { Club } from "../types";
+import { useAuthStore } from "../store/authStore";
 
 interface AdminPanelProps {
   onBack: () => void;
-  clubName?: string;
 }
 
-export default function AdminPanelScreen({ onBack, clubName = "Yazılım Kulübü" }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>("members");
+export default function AdminPanelScreen({ onBack }: AdminPanelProps) {
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [ad, setAd] = useState("");
+  const [aciklama, setAciklama] = useState("");
+  const [yoneticiEmail, setYoneticiEmail] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const members = [
-    { id: "1", name: "Ahmet Yılmaz", role: "Yönetici", department: "Bilgisayar Müh." },
-    { id: "2", name: "Zeynep Kaya", role: "Aktif Üye", department: "Yazılım Müh." },
-    { id: "3", name: "Mehmet Demir", role: "Üye", department: "Endüstri Müh." },
-  ];
+  const currentUser = useAuthStore((state) => state.user);
 
-  const applications = [
-    { id: "1", name: "Canan Çetin", email: "canan@uni.edu.tr", date: "24 Eyl 2026" },
-    { id: "2", name: "Burak Şen", email: "burak@uni.edu.tr", date: "25 Eyl 2026" },
-  ];
+  const loadClubs = async () => {
+    try {
+      const data = await clubService.getClubs();
+      setClubs(data);
+    } catch (err) {
+      console.log("Kulüpler çekilirken hata:", err);
+    }
+  };
 
-  const announcements = [
-    { id: "1", title: "Genel Kurul Toplantısı", date: "28 Eylül 2026", author: "Başkan" },
-    {
-      id: "2",
-      title: "Yeni Dönem Çalışma Grupları",
-      date: "01 Ekim 2026",
-      author: "Yönetim Kurulu",
-    },
-  ];
+  useEffect(() => {
+    loadClubs();
+  }, []);
 
-  const events = [
-    {
-      id: "1",
-      title: "React Native & Mobil Atölyesi",
-      date: "05 Eki 14:00",
-      location: "D-201",
-      participants: 42,
-    },
-    {
-      id: "2",
-      title: "Kariyer ve Teknoloji Zirvesi",
-      date: "12 Eki 10:00",
-      location: "Merkez Amfi",
-      participants: 120,
-    },
-  ];
+  const handleCreateClub = async () => {
+    if (!ad.trim() || !aciklama.trim()) {
+      Alert.alert("Eksik Alan", "Lütfen kulüp adı ve açıklamasını girin.");
+      return;
+    }
 
-  const tabs: { key: AdminTab; label: string }[] = [
-    { key: "members", label: "Üyeler" },
-    { key: "applications", label: "Başvurular" },
-    { key: "announcements", label: "Duyurular" },
-    { key: "events", label: "Etkinlikler" },
-  ];
+    setLoading(true);
+    try {
+      const adminId = currentUser?.uid || "mock-admin-id";
+      await clubService.createClub(ad, aciklama, adminId, yoneticiEmail);
+      Alert.alert("Başarılı", "Kulüp oluşturuldu ve davet kaydı açıldı.");
+      setAd("");
+      setAciklama("");
+      setYoneticiEmail("");
+      loadClubs();
+    } catch (err: any) {
+      Alert.alert("Hata", "Kulüp oluşturulamadı: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (item: Club) => {
+    try {
+      await clubService.toggleClubStatus(item.id, item.durum);
+      loadClubs();
+    } catch (err: any) {
+      Alert.alert("Hata", "Durum güncellenemedi.");
+    }
+  };
 
   return (
     <View className="flex-1 bg-slate-900 px-4 pt-4">
-      {/* Üst Bar */}
-      <View className="flex-row items-center justify-between mb-4">
-        <TouchableOpacity
-          onPress={onBack}
-          className="p-2 bg-slate-800 rounded-lg border border-slate-700"
-        >
-          <Text className="text-slate-300 font-medium">← Geri</Text>
-        </TouchableOpacity>
-        <Text className="text-white font-bold text-lg">{clubName}</Text>
-        <Badge label="Yönetim" variant="warning" />
-      </View>
+      <TouchableOpacity onPress={onBack} className="mb-4">
+        <Text className="text-indigo-400 font-semibold">← Geri Dön</Text>
+      </TouchableOpacity>
 
-      {/* Sekmeler */}
-      <View className="flex-row bg-slate-800 rounded-xl p-1 mb-4 border border-slate-700">
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            onPress={() => setActiveTab(tab.key)}
-            className={`flex-1 py-2 rounded-lg items-center ${
-              activeTab === tab.key ? "bg-indigo-600" : "bg-transparent"
-            }`}
-          >
-            <Text
-              className={`text-xs font-semibold ${
-                activeTab === tab.key ? "text-white" : "text-slate-400"
-              }`}
-            >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <Text className="text-2xl font-bold text-white mb-4">Kulüp Yönetimi</Text>
 
-      {/* Sekme İçerikleri */}
-      <ScrollView showsVerticalScrollIndicator={false} className="flex-1">
-        {activeTab === "members" && (
-          <View className="gap-3 pb-6">
-            <View className="flex-row justify-between items-center mb-1">
-              <Text className="text-slate-400 text-sm">Toplam {members.length} kayıtlı üye</Text>
-              <Button
-                title="+ Üye Ekle"
-                variant="secondary"
-                onPress={() => alert("Üye ekleme mock")}
-              />
+      {/* Kulüp Ekleme Formu */}
+      <Card className="mb-6">
+        <Input
+          label="Kulüp Adı"
+          placeholder="Örn: Yapay Zeka Topluluğu"
+          value={ad}
+          onChangeText={setAd}
+        />
+        <Input
+          label="Açıklama"
+          placeholder="Kulübün faaliyet alanı"
+          value={aciklama}
+          onChangeText={setAciklama}
+        />
+        <Input
+          label="İlk Yönetici E-Postası (Opsiyonel)"
+          placeholder="yonetici@ogrenci.edu.tr"
+          value={yoneticiEmail}
+          onChangeText={setYoneticiEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <Button
+          title="Kulüp Oluştur"
+          onPress={handleCreateClub}
+          loading={loading}
+          className="mt-2"
+        />
+      </Card>
+
+      {/* Liste */}
+      <Text className="text-lg font-semibold text-white mb-2">Mevcut Kulüpler</Text>
+      <FlatList
+        data={clubs}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View className="bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700 flex-row justify-between items-center">
+            <View className="flex-1 mr-3">
+              <Text className="text-white font-bold text-base">{item.ad}</Text>
+              <Text className="text-slate-400 text-xs mt-1">{item.aciklama}</Text>
             </View>
-            {members.map((m) => (
-              <Card key={m.id} className="flex-row justify-between items-center py-3">
-                <View>
-                  <Text className="text-white font-bold">{m.name}</Text>
-                  <Text className="text-slate-400 text-xs mt-0.5">{m.department}</Text>
-                </View>
-                <Badge label={m.role} variant={m.role === "Yönetici" ? "warning" : "info"} />
-              </Card>
-            ))}
-          </View>
-        )}
 
-        {activeTab === "applications" && (
-          <View className="gap-3 pb-6">
-            <Text className="text-slate-400 text-sm mb-1">
-              {applications.length} onay bekleyen başvuru
-            </Text>
-            {applications.map((app) => (
-              <Card key={app.id} className="gap-2">
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-white font-bold">{app.name}</Text>
-                  <Text className="text-slate-400 text-xs">{app.date}</Text>
-                </View>
-                <Text className="text-slate-400 text-xs">{app.email}</Text>
-                <View className="flex-row gap-2 mt-2">
-                  <Button
-                    title="Onayla"
-                    variant="primary"
-                    className="flex-1 py-2"
-                    onPress={() => alert("Başvuru onaylandı (Mock)")}
-                  />
-                  <Button
-                    title="Reddet"
-                    variant="secondary"
-                    className="flex-1 py-2"
-                    onPress={() => alert("Başvuru reddedildi (Mock)")}
-                  />
-                </View>
-              </Card>
-            ))}
+            <TouchableOpacity
+              onPress={() => handleToggleStatus(item)}
+              className={`px-3 py-1.5 rounded-lg ${item.durum === "aktif" ? "bg-emerald-600" : "bg-rose-600"}`}
+            >
+              <Text className="text-white text-xs font-bold uppercase">{item.durum}</Text>
+            </TouchableOpacity>
           </View>
         )}
-
-        {activeTab === "announcements" && (
-          <View className="gap-3 pb-6">
-            <Button
-              title="+ Yeni Duyuru Paylaş"
-              variant="primary"
-              className="mb-2"
-              onPress={() => alert("Duyuru oluşturma (Mock)")}
-            />
-            {announcements.map((a) => (
-              <Card key={a.id} className="gap-1">
-                <Text className="text-white font-bold text-base">{a.title}</Text>
-                <View className="flex-row justify-between items-center mt-2">
-                  <Text className="text-slate-400 text-xs">Yazar: {a.author}</Text>
-                  <Text className="text-slate-400 text-xs">{a.date}</Text>
-                </View>
-              </Card>
-            ))}
-          </View>
-        )}
-
-        {activeTab === "events" && (
-          <View className="gap-3 pb-6">
-            <Button
-              title="+ Yeni Etkinlik Oluştur"
-              variant="primary"
-              className="mb-2"
-              onPress={() => alert("Etkinlik oluşturma (Mock)")}
-            />
-            {events.map((e) => (
-              <Card key={e.id} className="gap-1.5">
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-white font-bold text-base">{e.title}</Text>
-                  <Badge label={`${e.participants} Katılımcı`} variant="success" />
-                </View>
-                <Text className="text-indigo-400 text-xs font-semibold">{e.date}</Text>
-                <Text className="text-slate-400 text-xs">Konum: {e.location}</Text>
-              </Card>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+      />
     </View>
   );
 }
