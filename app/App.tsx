@@ -5,29 +5,39 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LoginScreen } from "./screens/LoginScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
-import { ClubsScreen } from "./screens/ClubsScreen";
+import ClubsScreen from "./screens/ClubsScreen";
 import AdminPanelScreen from "./screens/AdminPanelScreen";
 import MemberDashboardScreen from "./screens/MemberDashboardScreen";
+import ClubManageScreen from "./screens/ClubManageScreen";
+import ClubDetailScreen from "./screens/ClubDetailScreen";
+import MemberIdCardScreen from "./screens/MemberIdCardScreen";
 import { useAuthStore } from "./store/authStore";
+import { Club } from "./types";
 
 type ScreenType =
-  "login" | "register" | "forgot-password" | "clubs" | "admin-panel" | "member-dashboard";
+  | "login"
+  | "register"
+  | "forgot-password"
+  | "clubs"
+  | "admin-panel"
+  | "manage-club"
+  | "club-detail"
+  | "member-dashboard"
+  | "member-id-card";
 
 type UserRole = "superadmin" | "clubadmin" | "member";
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("login");
   const [selectedRole, setSelectedRole] = useState<UserRole>("member");
+  const [selectedClub, setSelectedClub] = useState<Club | null>(null);
 
-  // Zustand Store
   const user = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
   const logout = useAuthStore((state) => state.logout);
 
-  // Firestore üzerindeki is_admin değeri
   const isSuperAdmin = profile?.is_admin === true;
 
-  // Kullanıcı profili yüklendiğinde varsayılan rolü eşle
   useEffect(() => {
     if (user) {
       if (isSuperAdmin) {
@@ -38,7 +48,6 @@ export default function App() {
     }
   }, [user, isSuperAdmin]);
 
-  // Giriş başarılı olduğunda yetkiye göre hedef ekranı belirle
   const handleLoginSuccess = () => {
     if (isSuperAdmin) {
       setSelectedRole("superadmin");
@@ -62,7 +71,7 @@ export default function App() {
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
-      {/* ROL / MOD GEÇİŞ BARI - Sadece oturum açıkken gösterilir */}
+      {/* ROL / MOD GEÇİŞ BARI */}
       {user && (
         <View
           style={{
@@ -89,55 +98,54 @@ export default function App() {
             </Text>
           </View>
 
-          <View style={{ flexDirection: "row", gap: 6 }}>
-            {/* Üye Akışı: Herkes erişebilir */}
+          <View style={{ flexDirection: "row", gap: 5 }}>
             <TouchableOpacity
-              onPress={() => {
-                setSelectedRole("member");
-                setCurrentScreen("member-dashboard");
-              }}
+              onPress={() => setCurrentScreen("member-dashboard")}
               style={{
-                paddingHorizontal: 10,
+                paddingHorizontal: 8,
                 paddingVertical: 6,
                 borderRadius: 6,
-                backgroundColor: selectedRole === "member" ? "#059669" : "#1e293b",
+                backgroundColor: currentScreen === "member-dashboard" ? "#059669" : "#1e293b",
               }}
             >
-              <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Üye Akışı</Text>
+              <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "700" }}>Duyurular</Text>
             </TouchableOpacity>
 
-            {/* Kulüpler Listesi: Herkes erişebilir */}
             <TouchableOpacity
-              onPress={() => {
-                setCurrentScreen("clubs");
-              }}
+              onPress={() => setCurrentScreen("member-id-card")}
               style={{
-                paddingHorizontal: 10,
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                borderRadius: 6,
+                backgroundColor: currentScreen === "member-id-card" ? "#6366f1" : "#1e293b",
+              }}
+            >
+              <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "700" }}>Kimliğim</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setCurrentScreen("clubs")}
+              style={{
+                paddingHorizontal: 8,
                 paddingVertical: 6,
                 borderRadius: 6,
                 backgroundColor: currentScreen === "clubs" ? "#3b82f6" : "#1e293b",
               }}
             >
-              <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Kulüpler</Text>
+              <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "700" }}>Kulüpler</Text>
             </TouchableOpacity>
 
-            {/* Yönetici Paneli Butonu: Yalnızca is_admin = true olan kullanıcıya gösterilir */}
             {isSuperAdmin && (
               <TouchableOpacity
-                onPress={() => {
-                  setSelectedRole("superadmin");
-                  setCurrentScreen("admin-panel");
-                }}
+                onPress={() => setCurrentScreen("admin-panel")}
                 style={{
-                  paddingHorizontal: 10,
+                  paddingHorizontal: 8,
                   paddingVertical: 6,
                   borderRadius: 6,
                   backgroundColor: currentScreen === "admin-panel" ? "#d97706" : "#1e293b",
                 }}
               >
-                <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>
-                  Admin Paneli
-                </Text>
+                <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "700" }}>Admin</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -169,21 +177,52 @@ export default function App() {
           <ForgotPasswordScreen onNavigateToLogin={() => setCurrentScreen("login")} />
         )}
 
+        {/* Kulüpler Ekranı */}
         {currentScreen === "clubs" && (
-          <ClubsScreen userEmail={user?.email || undefined} onLogout={handleLogout} />
+          <ClubsScreen
+            userEmail={user?.email || undefined}
+            onLogout={handleLogout}
+            onSelectClub={(club: Club) => {
+              setSelectedClub(club);
+              setCurrentScreen("club-detail");
+            }}
+          />
         )}
 
-        {/* Admin Paneli Sayfa Düzeyi Güvenlik Bariyeri */}
+        {/* Kulüp Detay & Başvuru & Yönetici Geçiş Ekranı */}
+        {currentScreen === "club-detail" && selectedClub && (
+          <ClubDetailScreen
+            club={selectedClub}
+            onBack={() => setCurrentScreen("clubs")}
+            onManageClub={(club) => {
+              setSelectedClub(club);
+              setCurrentScreen("manage-club");
+            }}
+          />
+        )}
+
+        {/* Kulüp Yönetim & Duyuru Paneli */}
+        {currentScreen === "manage-club" && selectedClub && (
+          <ClubManageScreen
+            clubId={selectedClub.id}
+            clubName={selectedClub.ad}
+            onBack={() => setCurrentScreen("club-detail")}
+          />
+        )}
+
+        {/* Admin Paneli */}
         {currentScreen === "admin-panel" &&
           (isSuperAdmin ? (
-            <AdminPanelScreen onBack={() => setCurrentScreen("clubs")} />
+            <AdminPanelScreen
+              onBack={() => setCurrentScreen("clubs")}
+              onManageClub={(club) => {
+                setSelectedClub(club);
+                setCurrentScreen("manage-club");
+              }}
+            />
           ) : (
             <View className="flex-1 justify-center items-center px-6 bg-slate-900">
               <Text className="text-red-400 text-xl font-bold text-center">Yetkisiz Erişim</Text>
-              <Text className="text-slate-400 text-center mt-2 text-sm leading-5">
-                Bu alana yalnızca sistem yöneticileri (Superadmin) erişebilir. Hesabınız standart
-                üye statüsündedir.
-              </Text>
               <TouchableOpacity
                 onPress={() => setCurrentScreen("clubs")}
                 className="mt-6 bg-indigo-600 px-6 py-3 rounded-xl"
@@ -193,11 +232,17 @@ export default function App() {
             </View>
           ))}
 
+        {/* Üye Duyurular Akışı */}
         {currentScreen === "member-dashboard" && (
           <MemberDashboardScreen
             userEmail={user?.email || undefined}
             onBack={() => setCurrentScreen("clubs")}
           />
+        )}
+
+        {/* Dijital Kimlik Ekranı */}
+        {currentScreen === "member-id-card" && (
+          <MemberIdCardScreen onBack={() => setCurrentScreen("clubs")} />
         )}
       </View>
     </SafeAreaView>

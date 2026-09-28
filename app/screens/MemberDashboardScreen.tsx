@@ -1,122 +1,142 @@
-import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
 import { Card } from "../components/Card";
-import { Badge } from "../components/Badge";
-import { Button } from "../components/Button";
+import { announcementService, AnnouncementItem } from "../services/announcementService";
+import { useAuthStore } from "../store/authStore";
 
-interface MemberDashboardProps {
-  onBack: () => void;
+interface MemberDashboardScreenProps {
   userEmail?: string;
+  onBack: () => void;
 }
 
-export default function MemberDashboardScreen({
-  onBack,
-  userEmail = "ogrenci@uni.edu.tr",
-}: MemberDashboardProps) {
-  const [joinedEvents, setJoinedEvents] = useState<{ [key: string]: boolean }>({
-    "1": true,
-  });
+export default function MemberDashboardScreen({ userEmail, onBack }: MemberDashboardScreenProps) {
+  const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
 
-  const toggleRSVP = (id: string) => {
-    setJoinedEvents((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const isSuperAdmin = profile?.is_admin === true;
+
+  const loadAnnouncements = async () => {
+    if (!user) return;
+    try {
+      const data = await announcementService.getAnnouncementsForUser(user.uid, isSuperAdmin);
+      setAnnouncements(data);
+    } catch (err) {
+      console.log("Duyurular çekilemedi:", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  const announcements = [
-    { id: "1", title: "Bahar Şenliği Tarihleri Açıklandı", type: "system", date: "Dün" },
-    { id: "2", title: "Yazılım Kulübü: Hackathon Takım Başvuruları", type: "club", date: "Bugün" },
-  ];
+  useEffect(() => {
+    loadAnnouncements();
+  }, [user?.uid, isSuperAdmin]);
 
-  const events = [
-    {
-      id: "1",
-      title: "React Native Geliştirme Çalıştayı",
-      time: "28 Eyl 15:00",
-      place: "Laboratuvar 3",
-    },
-    {
-      id: "2",
-      title: "Tiyatro Topluluğu: Dönem Provası",
-      time: "30 Eyl 17:30",
-      place: "Kültür Merkezi",
-    },
-  ];
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadAnnouncements();
+  };
 
   return (
     <View className="flex-1 bg-slate-900 px-4 pt-4">
       {/* Üst Bar */}
-      <View className="flex-row items-center justify-between mb-4">
-        <TouchableOpacity
-          onPress={onBack}
-          className="p-2 bg-slate-800 rounded-lg border border-slate-700"
-        >
-          <Text className="text-slate-300 font-medium">← Kulüplerim</Text>
+      <View className="flex-row justify-between items-center mb-4">
+        <TouchableOpacity onPress={onBack}>
+          <Text className="text-indigo-400 font-semibold">← Kulüplere Dön</Text>
         </TouchableOpacity>
-        <Text className="text-white font-bold text-lg">Öğrenci Paneli</Text>
-        <Badge label="Üye" variant="success" />
+        <Text className="text-slate-400 text-xs font-bold uppercase">Duyuru Akışı</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} className="flex-1 pb-6">
-        {/* 1. DİJİTAL KİMLİK / QR KART */}
-        <Card className="items-center py-6 mb-5 border border-indigo-500/40 bg-slate-800/90">
-          <Text className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            Üniversite Kulüpler Birliği
+      <Text className="text-2xl font-bold text-white">Duyurular & Bildirimler</Text>
+      <Text className="text-slate-400 text-xs mb-4">
+        Üyesi olduğunuz kulüpler ve sistem geneli güncel duyurular
+      </Text>
+
+      {/* Duyuru Listesi */}
+      {loading ? (
+        <ActivityIndicator color="#6366f1" className="mt-10" />
+      ) : announcements.length === 0 ? (
+        <View className="flex-1 justify-center items-center px-6">
+          <Text className="text-slate-400 text-sm text-center">
+            Henüz size iletilen aktif bir duyuru bulunmuyor.
           </Text>
-          <Text className="text-white font-extrabold text-xl mb-1">Dijital Öğrenci Kimliği</Text>
-          <Text className="text-slate-400 text-xs mb-4">{userEmail}</Text>
-
-          {/* Mock QR Placeholder */}
-          <View className="w-36 h-36 bg-white rounded-2xl items-center justify-center p-2 shadow-lg mb-3">
-            <View className="w-full h-full border-2 border-dashed border-slate-400 rounded-xl items-center justify-center bg-slate-100">
-              <Text className="text-slate-800 font-bold text-2xl tracking-widest">[ QR ]</Text>
-              <Text className="text-[10px] text-slate-500 font-medium mt-1">Giriş ve Yoklama</Text>
-            </View>
-          </View>
-          <Badge label="Etkinlik Katılımına Hazır" variant="success" />
-        </Card>
-
-        {/* 2. DUYURULAR */}
-        <Text className="text-white font-bold text-lg mb-3">Son Duyurular</Text>
-        <View className="gap-2.5 mb-5">
-          {announcements.map((a) => (
-            <Card key={a.id} className="flex-row justify-between items-center py-3">
-              <View className="flex-1 pr-2">
-                <Text className="text-white font-medium text-sm">{a.title}</Text>
-                <Text className="text-slate-400 text-xs mt-1">{a.date}</Text>
-              </View>
-              <Badge
-                label={a.type === "system" ? "Sistem" : "Kulüp"}
-                variant={a.type === "system" ? "neutral" : "info"}
-              />
-            </Card>
-          ))}
+          <Text className="text-slate-500 text-xs text-center mt-1">
+            Kulüplere katıldıkça kulüp duyuruları bu ekrana düşecektir.
+          </Text>
         </View>
-
-        {/* 3. ETKİNLİKLER */}
-        <Text className="text-white font-bold text-lg mb-3">Yaklaşan Etkinlikler</Text>
-        <View className="gap-3 pb-8">
-          {events.map((e) => {
-            const isAttending = joinedEvents[e.id];
+      ) : (
+        <FlatList
+          data={announcements}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
+          }
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => {
+            const isSystem = item.kapsam === "sistem";
             return (
-              <Card key={e.id} className="gap-2">
-                <Text className="text-white font-bold text-base">{e.title}</Text>
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-indigo-400 text-xs font-semibold">{e.time}</Text>
-                  <Text className="text-slate-400 text-xs">{e.place}</Text>
+              <Card className="mb-3 border border-slate-700/60">
+                {/* Rozetler ve Başlık */}
+                <View className="flex-row justify-between items-center mb-2">
+                  <View
+                    className={`px-2.5 py-0.5 rounded-full ${
+                      isSystem
+                        ? "bg-amber-500/20 border border-amber-500/40"
+                        : "bg-indigo-500/20 border border-indigo-500/40"
+                    }`}
+                  >
+                    <Text
+                      className={`text-[10px] font-bold uppercase ${
+                        isSystem ? "text-amber-400" : "text-indigo-400"
+                      }`}
+                    >
+                      {isSystem ? "SİSTEM DUYURUSU" : item.club_ad || "KULÜP DUYURUSU"}
+                    </Text>
+                  </View>
+
+                  <Text className="text-slate-500 text-[10px]">
+                    {new Date(item.tarih).toLocaleDateString("tr-TR", {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
                 </View>
-                <Button
-                  title={isAttending ? "✓ Katılıyorsun" : "Etkinliğe Katıl (RSVP)"}
-                  variant={isAttending ? "secondary" : "primary"}
-                  className="mt-2 py-2.5"
-                  onPress={() => toggleRSVP(e.id)}
-                />
+
+                {/* Duyuru Başlık ve İçerik */}
+                <Text className="text-white font-bold text-base mb-1">{item.baslik}</Text>
+                <Text className="text-slate-300 text-xs leading-5 mb-3">{item.icerik}</Text>
+
+                {/* Yayınlayan Bilgisi */}
+                <View className="pt-2 border-t border-slate-800/80 flex-row justify-between items-center">
+                  <Text className="text-slate-400 text-[10px]">
+                    Yayınlayan:{" "}
+                    <Text className="text-slate-300 font-semibold">{item.yayinlayan_ad}</Text>
+                  </Text>
+                  {isSystem && (
+                    <Text className="text-slate-500 text-[9px] italic">
+                      Hedef:{" "}
+                      {item.hedef_kitle === "tum_yoneticiler" ? "Tüm Yöneticiler" : "Tüm Üyeler"}
+                    </Text>
+                  )}
+                </View>
               </Card>
             );
-          })}
-        </View>
-      </ScrollView>
+          }}
+        />
+      )}
     </View>
   );
 }

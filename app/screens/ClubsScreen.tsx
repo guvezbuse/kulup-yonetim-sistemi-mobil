@@ -1,104 +1,88 @@
-import React from "react";
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useState, useEffect } from "react";
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Card } from "../components/Card";
-import { Badge } from "../components/Badge";
-
-interface ClubItem {
-  id: string;
-  ad: string;
-  aciklama: string;
-  role: "Yönetici" | "Üye";
-  status: "Aktif Üyelik" | "Aktif" | "Beklemede";
-}
+import { clubService } from "../services/clubService";
+import { Club } from "../types";
 
 interface ClubsScreenProps {
   userEmail?: string;
   onLogout: () => void;
-  onSelectClub?: (club: ClubItem) => void;
+  onSelectClub?: (club: Club) => void;
 }
 
-// Şartnamedeki ve fotoğraftaki mock veriler
-const MOCK_CLUBS: ClubItem[] = [
-  {
-    id: "1",
-    ad: "Yazılım Kulübü",
-    aciklama: "Yazılım, algoritma ve mobil geliştirme atölyeleri düzenler.",
-    role: "Yönetici",
-    status: "Aktif Üyelik",
-  },
-  {
-    id: "2",
-    ad: "Tiyatro Topluluğu",
-    aciklama: "Dönem sonu oyunları ve drama çalışmaları.",
-    role: "Üye",
-    status: "Aktif",
-  },
-];
+export default function ClubsScreen({ userEmail, onLogout, onSelectClub }: ClubsScreenProps) {
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export const ClubsScreen: React.FC<ClubsScreenProps> = ({
-  userEmail = "guvezbuse@gmail.com",
-  onLogout,
-  onSelectClub,
-}) => {
+  useEffect(() => {
+    loadClubs();
+  }, []);
+
+  const loadClubs = async () => {
+    try {
+      const data = await clubService.getClubs();
+      setClubs(data.filter((c) => c.durum === "aktif"));
+    } catch (err) {
+      console.log("Kulüpler çekilemedi:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-slate-900">
-      {/* Üst Profil Barı (Çentikten korumalı) */}
-      <View className="flex-row items-center justify-between px-6 py-4 border-b border-slate-800">
-        <View className="flex-row items-center space-x-3">
-          <View className="w-10 h-10 rounded-full bg-indigo-600 items-center justify-center">
-            <Text className="text-white font-bold text-lg">
-              {userEmail.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <View className="ml-3">
-            <Text className="text-white font-bold text-base">Hesabım</Text>
-            <Text className="text-slate-400 text-xs">{userEmail}</Text>
-          </View>
+    <View className="flex-1 bg-slate-900 px-4 pt-4">
+      {/* Üst Bar */}
+      <View className="flex-row justify-between items-center mb-6">
+        <View>
+          <Text className="text-2xl font-bold text-white">Kulüpler</Text>
+          {userEmail && <Text className="text-slate-400 text-xs mt-0.5">{userEmail}</Text>}
         </View>
-
         <TouchableOpacity
           onPress={onLogout}
-          className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 active:bg-slate-700"
+          className="bg-rose-500/20 px-3 py-1.5 rounded-lg border border-rose-500/30"
         >
-          <Text className="text-slate-300 font-semibold text-xs">Çıkış</Text>
+          <Text className="text-rose-400 font-semibold text-xs">Çıkış Yap</Text>
         </TouchableOpacity>
       </View>
 
       {/* Kulüp Listesi */}
-      <ScrollView className="flex-1 px-6 pt-6" showsVerticalScrollIndicator={false}>
-        <View className="flex-row items-center justify-between mb-4">
-          <Text className="text-2xl font-extrabold text-white tracking-tight">Kulüplerim</Text>
+      {loading ? (
+        <ActivityIndicator color="#6366f1" className="mt-10" />
+      ) : clubs.length === 0 ? (
+        <View className="flex-1 justify-center items-center">
+          <Text className="text-slate-400 text-sm">Henüz aktif bir kulüp bulunmuyor.</Text>
         </View>
-
-        <View className="space-y-4 pb-10">
-          {MOCK_CLUBS.map((club) => (
-            <TouchableOpacity
-              key={club.id}
-              activeOpacity={0.8}
-              onPress={() => onSelectClub && onSelectClub(club)}
-              className="mb-4"
-            >
-              <Card>
-                <View className="flex-row justify-between items-start mb-2">
-                  <Text className="text-lg font-bold text-white flex-1 mr-2">{club.ad}</Text>
-                  <View className="bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
-                    <Text className="text-amber-400 text-xs font-semibold">{club.role}</Text>
-                  </View>
+      ) : (
+        <FlatList
+          data={clubs}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <Card className="mb-3 border border-slate-700/60">
+              <View className="flex-row justify-between items-center">
+                <View className="flex-1 mr-3">
+                  <Text className="text-white font-bold text-base">{item.ad}</Text>
+                  <Text className="text-slate-400 text-xs mt-1" numberOfLines={2}>
+                    {item.aciklama}
+                  </Text>
                 </View>
 
-                <Text className="text-slate-400 text-sm mb-4 leading-relaxed">{club.aciklama}</Text>
-
-                <View className="flex-row">
-                  <View className="bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
-                    <Text className="text-emerald-400 text-xs font-medium">{club.status}</Text>
-                  </View>
-                </View>
-              </Card>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+                {/* Doğrudan tıklanabilir İncele Butonu */}
+                <TouchableOpacity
+                  onPress={() => {
+                    if (onSelectClub) {
+                      onSelectClub(item);
+                    }
+                  }}
+                  className="bg-indigo-600 px-3 py-2 rounded-lg"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-white text-xs font-bold">İncele →</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          )}
+        />
+      )}
+    </View>
   );
-};
+}
