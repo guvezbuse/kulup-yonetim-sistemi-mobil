@@ -1,11 +1,11 @@
 // Sistem ve Kulüp Rolleri
-export type SystemRole = 'admin' | 'user';
-export type ClubRole = 'yönetici' | 'üye';
-export type MembershipStatus = 'beklemede' | 'aktif' | 'pasif' | 'reddedildi';
-export type EventStatus = 'taslak' | 'yayınlanan' | 'tamamlanan' | 'iptal';
-export type RSVPStatus = 'katılıyor' | 'katılmıyor' | 'beklemede';
-export type AnnouncementScope = 'sistem' | 'kulüp';
-export type TargetAudience = 'Tüm Yöneticiler' | 'Tüm Üyeler'| 'Herkes';
+export type SystemRole = "admin" | "user";
+export type ClubRole = "yonetici" | "uye";
+export type MembershipStatus = "beklemede" | "aktif" | "pasif" | "reddedildi";
+export type EventStatus = "taslak" | "yayınlanan" | "tamamlanan" | "iptal";
+export type RSVPStatus = "katılıyor" | "katılmıyor" | "beklemede";
+export type AnnouncementScope = "sistem" | "kulüp";
+export type TargetAudience = "Tüm Yöneticiler" | "Tüm Üyeler" | "Herkes";
 
 // 1. Kullanıcı Modeli (Sistem geneli hesap)
 export interface User {
@@ -24,7 +24,7 @@ export interface Club {
   ad: string;
   aciklama: string;
   olusturan_admin_id: string;
-  durum: 'aktif' | 'pasif';
+  durum: "aktif" | "pasif";
   createdAt: string;
 }
 
@@ -46,7 +46,7 @@ export interface Invitation {
   role: ClubRole;
   token: string;
   son_gecerlilik_tarihi: string;
-  durum: 'beklemede' | 'kabul_edildi' | 'iptal';
+  durum: "beklemede" | "kabul_edildi" | "iptal";
 }
 
 // 5. Kulübe Katılma Başvurusu (JoinRequest)
@@ -55,7 +55,7 @@ export interface JoinRequest {
   user_id: string;
   club_id: string;
   mesaj?: string;
-  durum: 'beklemede' | 'onaylandi' | 'reddedildi';
+  durum: "beklemede" | "onaylandi" | "reddedildi";
   karar_tarihi?: string;
   karar_veren_id?: string;
 }
@@ -100,7 +100,7 @@ export interface DigitalIdentity {
   user_id: string;
   secret_key: string;
   olusturulma_tarihi: string;
-  durum: 'aktif' | 'pasif';
+  durum: "aktif" | "pasif";
 }
 
 // 10. Yoklama Kaydı

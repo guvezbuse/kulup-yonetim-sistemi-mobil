@@ -17,6 +17,8 @@ export interface LoginScreenProps {
   onNavigateToRegister?: () => void;
   onNavigateToForgotPassword?: () => void;
   onNavigateToInvite?: () => void;
+  onNavigateToAcceptInvite?: () => void;
+  onNavigateAcceptInvite?: () => void;
   onNavigateRegister?: () => void;
   onNavigateForgotPassword?: () => void;
   onLoginSuccess?: () => void;
@@ -48,8 +50,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
   };
 
   const handleNavigateInvite = () => {
-    if (props.onNavigateToInvite) {
+    if (props.onNavigateToAcceptInvite) {
+      props.onNavigateToAcceptInvite();
+    } else if (props.onNavigateToInvite) {
       props.onNavigateToInvite();
+    } else if (props.onNavigateAcceptInvite) {
+      props.onNavigateAcceptInvite();
     } else {
       Alert.alert("Bilgi", "Davet kabul yönlendirmesi tanımlanmamış.");
     }
@@ -151,7 +157,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
             <TouchableOpacity
               onPress={handleNavigateInvite}
               activeOpacity={0.7}
-              className="mt-2 py-2 items-center border border-amber-500/30 rounded-xl bg-amber-500/10"
+              className="mt-2 py-2 items-center"
             >
               <Text className="text-amber-400 text-xs font-semibold">
                 🎟️ Kulüp Davet Kodunuz mu Var? Buraya Tıklayın

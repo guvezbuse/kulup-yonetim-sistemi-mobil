@@ -5,6 +5,7 @@ import {
   getDocs,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -38,8 +39,8 @@ export const membershipService = {
     clubId: string,
     userId: string,
     userEmail: string,
-    userName: string,
     mesaj: string = "",
+    userName: string = "",
   ) => {
     // Daha önce aktif üyeliği veya bekleyen başvurusu var mı kontrol et
     const qMembers = query(
@@ -68,14 +69,22 @@ export const membershipService = {
       createdAt: serverTimestamp(),
     });
 
-    // Membership kaydını 'beklemede' olarak aç
-    await addDoc(collection(db, "memberships"), {
-      club_id: clubId,
-      user_id: userId,
-      role: "üye",
-      status: "beklemede",
-      katilim_tarihi: new Date().toISOString(),
-    });
+    // Mükerrer oluşturmamak için: Eğer eski pasif/reddedilmiş kaydı varsa onu güncelle, yoksa yeni aç
+    if (!memberSnap.empty) {
+      await updateDoc(doc(db, "memberships", memberSnap.docs[0].id), {
+        role: "üye",
+        status: "beklemede",
+        katilim_tarihi: new Date().toISOString(),
+      });
+    } else {
+      await addDoc(collection(db, "memberships"), {
+        club_id: clubId,
+        user_id: userId,
+        role: "üye",
+        status: "beklemede",
+        katilim_tarihi: new Date().toISOString(),
+      });
+    }
 
     return true;
   },
@@ -94,29 +103,46 @@ export const membershipService = {
     }));
   },
 
-  // 3. Başvuruyu Onaylama (Şartname 4.4 - status -> aktif)
+  // 3. Başvuruyu Onaylama (Mükerrer üyelik engelli)
   approveRequest: async (requestId: string, clubId: string, userId: string) => {
-    // join_requests durumunu güncelle
-    await updateDoc(doc(db, "join_requests", requestId), {
-      durum: "onaylandi",
-      karar_tarihi: new Date().toISOString(),
-    });
-
-    // memberships tablosundaki statüyü 'aktif' yap
-    const qMember = query(
+    const qExisting = query(
       collection(db, "memberships"),
       where("club_id", "==", clubId),
       where("user_id", "==", userId),
     );
-    const memberSnap = await getDocs(qMember);
-    if (!memberSnap.empty) {
-      await updateDoc(doc(db, "memberships", memberSnap.docs[0].id), {
+    const existingSnap = await getDocs(qExisting);
+
+    if (existingSnap.empty) {
+      await addDoc(collection(db, "memberships"), {
+        club_id: clubId,
+        user_id: userId,
+        role: "üye",
         status: "aktif",
+        katilim_tarihi: new Date().toISOString(),
       });
+    } else {
+      // Varsa ilk dokümanı aktif yap
+      const primaryDoc = existingSnap.docs[0];
+      await updateDoc(doc(db, "memberships", primaryDoc.id), {
+        status: "aktif",
+        role: "üye",
+      });
+
+      // Eğer birden fazla doküman oluşmuşsa temizle
+      if (existingSnap.docs.length > 1) {
+        for (let i = 1; i < existingSnap.docs.length; i++) {
+          await deleteDoc(doc(db, "memberships", existingSnap.docs[i].id));
+        }
+      }
     }
+
+    await updateDoc(doc(db, "join_requests", requestId), {
+      durum: "onaylandi",
+      updatedAt: serverTimestamp(),
+    });
   },
 
-  // 4. Başvuruyu Reddetme (Şartname 4.4 - status -> reddedildi)
+  // 4. Başvuruyu Reddetme (Şartname 4.4)
   rejectRequest: async (requestId: string, clubId: string, userId: string) => {
     await updateDoc(doc(db, "join_requests", requestId), {
       durum: "reddedildi",
@@ -136,7 +162,29 @@ export const membershipService = {
     }
   },
 
-  // 5. Bir kullanıcının bu kulüpteki mevcut üyelik durumunu sorgulama
+  // 5. ClubDetailScreen için üyelik ve rol durumunu getirme
+  getUserMembership: async (clubId: string, userId: string) => {
+    try {
+      const q = query(
+        collection(db, "memberships"),
+        where("club_id", "==", clubId),
+        where("user_id", "==", userId),
+      );
+      const snap = await getDocs(q);
+      if (snap.empty) return null;
+      const docData = snap.docs[0].data();
+      return {
+        id: snap.docs[0].id,
+        role: docData.role || "üye",
+        status: docData.status || "beklemede",
+      };
+    } catch (error) {
+      console.log("getUserMembership hatası:", error);
+      return null;
+    }
+  },
+
+  // 6. Kullanıcının kulüpteki mevcut üyelik durumunu sorgulama (Tip güvenli)
   getUserClubStatus: async (clubId: string, userId: string) => {
     const q = query(
       collection(db, "memberships"),
@@ -148,16 +196,23 @@ export const membershipService = {
     return snap.docs[0].data() as { role: ClubRole; status: MembershipStatus };
   },
 
-  // 6. Bir kulübün tüm üyelerini ve yöneticilerini çekme (Şartname 2.1 & 2.2)
+  // 7. Bir kulübün tüm üyelerini ve yöneticilerini çekme (Mükerrerleri filtreler)
   getClubMembers: async (clubId: string): Promise<ClubMemberDetail[]> => {
     const qMembers = query(collection(db, "memberships"), where("club_id", "==", clubId));
     const memberSnap = await getDocs(qMembers);
 
     const members: ClubMemberDetail[] = [];
+    const seenUserIds = new Set<string>();
 
     for (const memberDoc of memberSnap.docs) {
       const mData = memberDoc.data();
       if (mData.status === "aktif" || mData.status === "pasif") {
+        // Eğer aynı kullanıcıdan veritabanında çift oluşmuşsa pasif/fazla olanı atla
+        if (seenUserIds.has(mData.user_id)) {
+          continue;
+        }
+        seenUserIds.add(mData.user_id);
+
         let email = "Bilinmeyen Kullanıcı";
         let name = "";
 
@@ -189,7 +244,7 @@ export const membershipService = {
     return members;
   },
 
-  // 7. Üyenin aktif/pasif durumunu değiştirme (Şartname 2.1 & 2.2)
+  // 8. Üyenin aktif/pasif durumunu değiştirme
   toggleMemberStatus: async (membershipId: string, currentStatus: MembershipStatus) => {
     const nextStatus: MembershipStatus = currentStatus === "aktif" ? "pasif" : "aktif";
     await updateDoc(doc(db, "memberships", membershipId), {
@@ -198,12 +253,18 @@ export const membershipService = {
     return nextStatus;
   },
 
-  // 8. Üyenin rolünü değiştirme (Üye <-> Yönetici) (Şartname 2.2)
+  // 9. Üyenin rolünü değiştirme (Üye <-> Yönetici)
   toggleMemberRole: async (membershipId: string, currentRole: ClubRole) => {
-    const nextRole: ClubRole = currentRole === "üye" ? "yönetici" : "üye";
+    const isYonetici = currentRole === "yonetici" || (currentRole as any) === "yönetici";
+    const nextRole: ClubRole = isYonetici ? ("üye" as ClubRole) : ("yonetici" as ClubRole);
     await updateDoc(doc(db, "memberships", membershipId), {
       role: nextRole,
     });
     return nextRole;
+  },
+
+  // 10. Kulüpten Üye Silme / Çıkarma
+  removeMemberFromClub: async (membershipId: string) => {
+    await deleteDoc(doc(db, "memberships", membershipId));
   },
 };

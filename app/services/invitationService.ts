@@ -4,44 +4,40 @@ import {
   where,
   getDocs,
   addDoc,
+  deleteDoc,
   doc,
+  serverTimestamp,
   setDoc,
   updateDoc,
-  serverTimestamp,
-  Timestamp,
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { db, auth } from "./firebase";
+import { auth, db } from "../lib/firebase";
 import { ClubRole } from "../types";
 
 export interface InvitationItem {
   id: string;
-  club_id: string;
   email: string;
+  club_id: string;
   role: ClubRole;
   token: string;
-  expires_at: Timestamp;
-  status: "pending" | "accepted" | "expired";
-  created_at?: Timestamp;
+  son_gecerlilik_tarihi: string;
+  durum: "beklemede" | "kabul_edildi" | "iptal";
+}
+
+export interface InviteResult {
+  type: "direct_membership" | "invitation_created";
+  message: string;
+  inviteLink?: string;
+  token?: string;
 }
 
 export const invitationService = {
-  // Rastgele 32 karakterlik token üretir
-  generateToken(): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let token = "";
-    for (let i = 0; i < 32; i++) {
-      token += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return token;
-  },
-
-  // Kulübe ait bekleyen davetleri çeker
-  async getPendingInvitations(clubId: string): Promise<InvitationItem[]> {
+  // Kulübe ait bekleyen dış davetleri listeleme
+  getPendingInvitations: async (clubId: string): Promise<InvitationItem[]> => {
     const q = query(
       collection(db, "invitations"),
       where("club_id", "==", clubId),
-      where("status", "==", "pending"),
+      where("durum", "==", "beklemede"),
     );
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({
@@ -50,167 +46,179 @@ export const invitationService = {
     }));
   },
 
-  // Süresi dolmuş veya bekleyen davetin token'ını 72 saat uzatarak yeniler
-  async resendInvitation(inviteId: string): Promise<{ newToken: string; newInviteLink: string }> {
-    const newToken = this.generateToken();
-    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 saat
-
-    await updateDoc(doc(db, "invitations", inviteId), {
-      token: newToken,
-      expires_at: Timestamp.fromDate(expiresAt),
-      status: "pending",
-      updated_at: serverTimestamp(),
-    });
-
-    const newInviteLink = `https://kulup.app/invite?token=${newToken}`;
-    return { newToken, newInviteLink };
-  },
-
-  // E-Posta ile davet etme (varsa üye yapar + bildirim atar, yoksa 72 saatlik davet açar)
-  async inviteUserToClub(
+  // 1. Kulübe Davet Gönderme
+  inviteUserToClub: async (
     clubId: string,
     email: string,
     role: ClubRole,
-  ): Promise<{ type: "added" | "invited"; message: string; inviteLink?: string; token?: string }> {
+  ): Promise<InviteResult> => {
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. Kullanıcı users tablosunda var mı?
-    const usersQ = query(collection(db, "users"), where("email", "==", cleanEmail));
-    const usersSnap = await getDocs(usersQ);
+    // Kullanıcı sistemde kayıtlı mı?
+    const usersRef = collection(db, "users");
+    const qUser = query(usersRef, where("email", "==", cleanEmail));
+    const userSnap = await getDocs(qUser);
 
-    if (!usersSnap.empty) {
-      const userDoc = usersSnap.docs[0];
-      const targetUid = userDoc.id;
+    if (!userSnap.empty) {
+      const existingUserDoc = userSnap.docs[0];
+      const userId = existingUserDoc.id;
 
-      const memQ = query(
-        collection(db, "memberships"),
+      const membershipsRef = collection(db, "memberships");
+      const qMember = query(
+        membershipsRef,
         where("club_id", "==", clubId),
-        where("user_id", "==", targetUid),
+        where("user_id", "==", userId),
       );
-      const memSnap = await getDocs(memQ);
+      const memberSnap = await getDocs(qMember);
 
-      if (!memSnap.empty) {
-        throw new Error("Bu kullanıcı zaten bu kulübün üyesi!");
+      if (!memberSnap.empty) {
+        throw new Error("Bu kullanıcı zaten bu kulübün üyesi veya yöneticisi.");
       }
 
-      // Üyelik kaydı oluştur
-      await addDoc(collection(db, "memberships"), {
+      await addDoc(membershipsRef, {
         club_id: clubId,
-        user_id: targetUid,
+        user_id: userId,
         role: role,
         status: "aktif",
-        created_at: serverTimestamp(),
+        katilim_tarihi: new Date().toISOString(),
       });
 
-      // Kullanıcıya sistem içi bildirim kaydı oluştur (Şartname 4.2)
-      await addDoc(collection(db, "notifications"), {
-        user_id: targetUid,
-        title: "Yeni Kulüp Üyeliği",
-        body: `Bir kulübe ${role} olarak başarıyla eklendiniz.`,
-        read: false,
-        created_at: serverTimestamp(),
-      }).catch(() => {});
+      await invitationService.deleteInvitationByEmail(clubId, cleanEmail);
 
       return {
-        type: "added",
-        message: `${cleanEmail} başarıyla ${role} olarak kulübe eklendi.`,
+        type: "direct_membership",
+        message: `${cleanEmail} sistemde kayıtlı olduğu için doğrudan ${role} olarak eklendi.`,
       };
     }
 
-    // 2. Kullanıcı kayıtlı değil -> 72 saatlik invitation aç
-    const token = this.generateToken();
-    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+    await invitationService.deleteInvitationByEmail(clubId, cleanEmail);
+
+    const token = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
 
     await addDoc(collection(db, "invitations"), {
-      club_id: clubId,
       email: cleanEmail,
+      club_id: clubId,
       role: role,
       token: token,
-      expires_at: Timestamp.fromDate(expiresAt),
-      status: "pending",
-      created_at: serverTimestamp(),
+      son_gecerlilik_tarihi: expiresAt,
+      durum: "beklemede",
+      createdAt: serverTimestamp(),
     });
 
-    const inviteLink = `https://kulup.app/invite?token=${token}`;
+    const inviteLink = `https://kulupyonetim.app/join?token=${token}&clubId=${clubId}`;
 
     return {
-      type: "invited",
-      message: "Kullanıcı kayıtlı değil, 72 saat geçerli davet oluşturuldu.",
-      inviteLink,
-      token,
+      type: "invitation_created",
+      message: `${cleanEmail} sistemde kayıtlı değil. 72 saat geçerli davet bağlantısı oluşturuldu.`,
+      inviteLink: inviteLink,
+      token: token,
     };
   },
 
-  // Token geçerliliğini denetler
-  async verifyToken(token: string): Promise<InvitationItem> {
+  // Davet linkini yenileme
+  resendInvitation: async (inviteId: string) => {
+    const token = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+
+    await updateDoc(doc(db, "invitations", inviteId), {
+      token: token,
+      son_gecerlilik_tarihi: expiresAt,
+      durum: "beklemede",
+    });
+
+    return {
+      newInviteLink: `https://kulupyonetim.app/join?token=${token}`,
+    };
+  },
+
+  // 2. Token Doğrulama
+  verifyToken: async (token: string): Promise<InvitationItem> => {
     const cleanToken = token.trim();
-    const q = query(collection(db, "invitations"), where("token", "==", cleanToken));
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, where("token", "==", cleanToken));
     const snap = await getDocs(q);
 
     if (snap.empty) {
-      throw new Error("Geçersiz davet kodu veya bağlantısı!");
+      throw new Error("Geçersiz veya bulunamayan davet kodu!");
     }
 
-    const inviteDoc = snap.docs[0];
-    const data = inviteDoc.data() as Omit<InvitationItem, "id">;
+    const docSnap = snap.docs[0];
+    const data = docSnap.data();
 
-    if (data.status === "accepted") {
-      throw new Error("Bu davet bağlantısı daha önce kullanılmış.");
-    }
-
-    const now = new Date();
-    if (data.expires_at.toDate() < now) {
-      throw new Error(
-        "Bu davetin 72 saatlik geçerlilik süresi dolmuş. Lütfen kulüp yöneticinizden yeni davet isteyin.",
-      );
+    if (data.son_gecerlilik_tarihi && new Date(data.son_gecerlilik_tarihi) < new Date()) {
+      await deleteDoc(doc(db, "invitations", docSnap.id));
+      throw new Error("Bu davet kodunun 72 saatlik geçerlilik süresi dolmuş.");
     }
 
     return {
-      id: inviteDoc.id,
-      ...data,
+      id: docSnap.id,
+      email: data.email,
+      club_id: data.club_id,
+      role: data.role,
+      token: data.token,
+      son_gecerlilik_tarihi: data.son_gecerlilik_tarihi,
+      durum: data.durum,
     };
   },
 
-  // Davet kabulü: Firebase Auth hesabı açar, users tablosuna yazar, kulübe üye yapar, daveti kapatır
-  async acceptInvitation(params: {
+  // 3. Daveti Kabul Ederek Kayıt Olma & Daveti Silme
+  acceptInvitation: async ({
+    invite,
+    name,
+    surname,
+    password,
+    studentNo,
+  }: {
     invite: InvitationItem;
     name: string;
     surname: string;
     password: string;
     studentNo?: string;
-  }) {
-    const { invite, name, surname, password, studentNo } = params;
+  }) => {
+    const userCredential = await createUserWithEmailAndPassword(auth, invite.email, password);
+    const user = userCredential.user;
 
-    // 1. Firebase Auth üzerinde hesap oluştur
-    const cred = await createUserWithEmailAndPassword(auth, invite.email, password);
-    const uid = cred.user.uid;
-
-    // 2. Profil bilgilerini Firestore 'users' koleksiyonuna doğrudan yaz
-    await setDoc(doc(db, "users", uid), {
-      name: name.trim(),
-      surname: surname.trim(),
-      email: invite.email.toLowerCase(),
-      student_no: studentNo?.trim() || "",
-      global_role: "student",
-      created_at: serverTimestamp(),
+    await setDoc(doc(db, "users", user.uid), {
+      id: user.uid,
+      name,
+      surname,
+      email: invite.email,
+      student_no: studentNo || "",
+      is_admin: false,
+      createdAt: serverTimestamp(),
     });
 
-    // 3. Kulübe aktif üye/yönetici olarak ekle
     await addDoc(collection(db, "memberships"), {
       club_id: invite.club_id,
-      user_id: uid,
+      user_id: user.uid,
       role: invite.role,
       status: "aktif",
-      created_at: serverTimestamp(),
+      katilim_tarihi: new Date().toISOString(),
     });
 
-    // 4. Davet durumunu 'accepted' yap ve kilitle
-    await updateDoc(doc(db, "invitations", invite.id), {
-      status: "accepted",
-      accepted_at: serverTimestamp(),
-      accepted_by: uid,
-    });
+    await deleteDoc(doc(db, "invitations", invite.id));
+    return true;
+  },
 
-    return uid;
+  // Manuel İptal / Silme
+  deleteInvitation: async (inviteId: string) => {
+    await deleteDoc(doc(db, "invitations", inviteId));
+  },
+
+  // E-Postaya Göre Temizleme
+  deleteInvitationByEmail: async (clubId: string, email: string) => {
+    try {
+      const q = query(
+        collection(db, "invitations"),
+        where("club_id", "==", clubId),
+        where("email", "==", email.trim().toLowerCase()),
+      );
+      const snap = await getDocs(q);
+      const deletePromises = snap.docs.map((d) => deleteDoc(doc(db, "invitations", d.id)));
+      await Promise.all(deletePromises);
+    } catch (e) {
+      console.log("Davet temizleme hatası:", e);
+    }
   },
 };

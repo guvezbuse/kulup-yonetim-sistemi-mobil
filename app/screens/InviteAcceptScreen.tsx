@@ -20,7 +20,7 @@ interface InviteAcceptScreenProps {
   onCancel: () => void;
 }
 
-export default function InviteAcceptScreen({
+export function InviteAcceptScreen({
   initialToken = "",
   onSuccess,
   onCancel,
@@ -37,7 +37,7 @@ export default function InviteAcceptScreen({
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Panodan otomatik yapıştırma (Kullanıcı linki kopyalayıp geldiyse token'ı çeker)
+  // Panodan yapıştırma
   const handlePasteFromClipboard = async () => {
     try {
       const clipboardContent = await Clipboard.getStringAsync();
@@ -46,24 +46,31 @@ export default function InviteAcceptScreen({
         return;
       }
 
-      // Link halindeyse içindeki token parametresini ayıklar
-      if (clipboardContent.includes("token=")) {
-        const extractedToken = clipboardContent.split("token=")[1]?.split("&")[0];
-        setToken(extractedToken || clipboardContent.trim());
-      } else {
-        setToken(clipboardContent.trim());
+      let parsed = clipboardContent.trim();
+      if (parsed.includes("token=")) {
+        parsed = parsed.split("token=")[1]?.split("&")[0] || parsed;
+      } else if (parsed.includes("en=")) {
+        parsed = parsed.split("en=")[1]?.split("&")[0] || parsed;
       }
+      setToken(parsed.trim());
     } catch {
       Alert.alert("Hata", "Panodan veri okunamadı.");
     }
   };
 
-  // 1. Kodu Doğrula
+  // 1. Kodu Ayıkla ve Doğrula
   const handleVerify = async () => {
     let cleanToken = token.trim();
+
     if (cleanToken.includes("token=")) {
       cleanToken = cleanToken.split("token=")[1]?.split("&")[0] || cleanToken;
+    } else if (cleanToken.includes("en=")) {
+      cleanToken = cleanToken.split("en=")[1]?.split("&")[0] || cleanToken;
+    } else if (cleanToken.includes("/")) {
+      cleanToken = cleanToken.split("/").pop() || cleanToken;
     }
+
+    cleanToken = cleanToken.trim();
 
     if (!cleanToken) {
       Alert.alert("Hata", "Lütfen bir davet kodu veya bağlantısı girin.");
@@ -76,10 +83,10 @@ export default function InviteAcceptScreen({
       setVerifiedInvite(invite);
       Alert.alert(
         "Davet Bulundu! 🎉",
-        `Hoş geldiniz! ${invite.email} adresi için davet onaylandı.`,
+        `Hoş geldiniz! ${invite.email} adresi için davet doğrulandı.`,
       );
     } catch (err: any) {
-      Alert.alert("Geçersiz Davet", err.message || "Davet doğrulanamadı.");
+      Alert.alert("Geçersiz Davet", err.message || "Geçersiz davet kodu veya bağlantısı!");
       setVerifiedInvite(null);
     } finally {
       setChecking(false);
@@ -147,7 +154,6 @@ export default function InviteAcceptScreen({
           Size iletilen davet kodu veya bağlantısı ile doğrudan kulübe kayıt olun.
         </Text>
 
-        {/* 1. ADIM: Token Doğrulama */}
         {!verifiedInvite ? (
           <Card className="mb-6">
             <Input
@@ -174,7 +180,6 @@ export default function InviteAcceptScreen({
             />
           </Card>
         ) : (
-          /* 2. ADIM: Bilgileri Girip Şifre Belirleme */
           <Card className="mb-8 border border-emerald-500/40">
             <View className="bg-emerald-950/40 p-3 rounded-xl mb-4 border border-emerald-500/30 flex-row justify-between items-center">
               <View className="flex-1 mr-2">
@@ -233,3 +238,5 @@ export default function InviteAcceptScreen({
     </KeyboardAvoidingView>
   );
 }
+
+export default InviteAcceptScreen;

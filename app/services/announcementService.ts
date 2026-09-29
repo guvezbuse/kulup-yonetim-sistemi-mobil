@@ -115,7 +115,7 @@ export const announcementService = {
     mSnap.forEach((docSnap) => {
       const data = docSnap.data();
       activeClubIds.push(data.club_id);
-      if (data.role === "yönetici") {
+      if (data.role === "yonetici") {
         isManagerInAnyClub = true;
       }
     });
