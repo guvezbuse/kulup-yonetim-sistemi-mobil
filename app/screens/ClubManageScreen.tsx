@@ -54,6 +54,18 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
   const [clubAnnContent, setClubAnnContent] = useState("");
   const [annPublishing, setAnnPublishing] = useState(false);
 
+  // Kalan Süre Hesaplayıcı
+  const getRemainingHoursText = (expiryDateStr?: string) => {
+    if (!expiryDateStr) return { text: "Belirsiz", isExpired: true };
+    const diffMs = new Date(expiryDateStr).getTime() - new Date().getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+    if (diffHours <= 0) {
+      return { text: "Süresi Doldu ⚠️", isExpired: true };
+    }
+    return { text: `⏳ ${diffHours} saat kaldı`, isExpired: false };
+  };
+
   const loadData = async () => {
     try {
       const [reqData, memData, invData] = await Promise.all([
@@ -124,12 +136,12 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
 
   const handleResendInvite = async (invItem: InvitationItem) => {
     try {
-      const res = await (invitationService as any).resendInvitation(invItem.id);
-      setCreatedInviteLink(res?.newInviteLink || "");
+      const res = await invitationService.resendInvitation(invItem.id);
+      setCreatedInviteLink(res.newInviteLink);
       setInvitedTargetEmail(invItem.email);
       Alert.alert(
-        "Davet Yenilendi! 🔄 (72 Saat)",
-        `Yeni davet bağlantısı:\n\n${res?.newInviteLink || ""}`,
+        "Davet ve Süre Yenilendi! 🔄",
+        `Davet süresi +72 saat uzatıldı ve yeni bağlantı oluşturuldu:\n\n${res.newInviteLink}`,
       );
       loadData();
     } catch (err: any) {
@@ -393,19 +405,27 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
                 </View>
                 <View className="flex-row items-center gap-2">
                   <View
-                    className={`px-2 py-0.5 rounded ${isYonetici ? "bg-amber-500/20" : "bg-indigo-500/20"}`}
+                    className={`px-2 py-0.5 rounded ${
+                      isYonetici ? "bg-amber-500/20" : "bg-indigo-500/20"
+                    }`}
                   >
                     <Text
-                      className={`text-[10px] font-bold uppercase ${isYonetici ? "text-amber-400" : "text-indigo-400"}`}
+                      className={`text-[10px] font-bold uppercase ${
+                        isYonetici ? "text-amber-400" : "text-indigo-400"
+                      }`}
                     >
                       {isYonetici ? "yonetici" : "uye"}
                     </Text>
                   </View>
                   <View
-                    className={`px-2 py-0.5 rounded ${item.status === "aktif" ? "bg-emerald-500/20" : "bg-rose-500/20"}`}
+                    className={`px-2 py-0.5 rounded ${
+                      item.status === "aktif" ? "bg-emerald-500/20" : "bg-rose-500/20"
+                    }`}
                   >
                     <Text
-                      className={`text-[10px] font-bold uppercase ${item.status === "aktif" ? "text-emerald-400" : "text-rose-400"}`}
+                      className={`text-[10px] font-bold uppercase ${
+                        item.status === "aktif" ? "text-emerald-400" : "text-rose-400"
+                      }`}
                     >
                       {item.status}
                     </Text>
@@ -418,7 +438,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         )}
       </View>
 
-      {/* 4. BEKLEYEN DIŞ DAVETLER */}
+      {/* 4. BEKLEYEN DIŞ DAVETLER (SÜRE VE YENİLEME ENTEGRASYONLU) */}
       <Text className="text-base font-bold text-white mb-2">
         Bekleyen Dış Davetler ({invitations.length})
       </Text>
@@ -433,9 +453,9 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
           </View>
         ) : (
           invitations.map((inv) => {
-            const isExpired = inv.son_gecerlilik_tarihi
-              ? new Date(inv.son_gecerlilik_tarihi) < new Date()
-              : false;
+            const { text: statusText, isExpired } = getRemainingHoursText(
+              inv.son_gecerlilik_tarihi,
+            );
             const isInvYonetici = inv.role === "yonetici" || (inv.role as any) === "yönetici";
             return (
               <View
@@ -444,9 +464,15 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
               >
                 <View className="flex-1 mr-2">
                   <Text className="text-white font-bold text-xs">{inv.email}</Text>
-                  <Text className="text-slate-400 text-[10px]">
-                    Rol: {isInvYonetici ? "YONETICI" : "UYE"} •{" "}
-                    {isExpired ? "Süresi Dolmuş ⚠️" : "72 Saat Geçerli"}
+                  <Text className="text-slate-400 text-[10px] mt-0.5">
+                    Rol: {isInvYonetici ? "YÖNETİCİ" : "ÜYE"} •{" "}
+                    <Text
+                      className={
+                        isExpired ? "text-rose-400 font-bold" : "text-amber-400 font-semibold"
+                      }
+                    >
+                      {statusText}
+                    </Text>
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1.5">
@@ -458,10 +484,12 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => handleResendInvite(inv)}
-                    className="bg-amber-600/90 px-2.5 py-1.5 rounded-lg"
+                    className={`px-2.5 py-1.5 rounded-lg ${
+                      isExpired ? "bg-rose-600" : "bg-amber-600/90"
+                    }`}
                   >
                     <Text className="text-white text-[10px] font-bold">
-                      {isExpired ? "Yenile" : "Linki Yenile"}
+                      {isExpired ? "Yeniden Gönder" : "Süreyi & Linki Yenile"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -488,13 +516,19 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         <View className="flex-row gap-3 mb-4 mt-1">
           <TouchableOpacity
             onPress={() => setRole("uye")}
-            className={`flex-1 py-2 rounded-lg items-center border ${role === "uye" ? "bg-indigo-600 border-indigo-500" : "bg-slate-800 border-slate-700"}`}
+            className={`flex-1 py-2 rounded-lg items-center border ${
+              role === "uye" ? "bg-indigo-600 border-indigo-500" : "bg-slate-800 border-slate-700"
+            }`}
           >
             <Text className="text-white text-xs font-bold">Kulüp Üyesi</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setRole("yonetici")}
-            className={`flex-1 py-2 rounded-lg items-center border ${role === "yonetici" ? "bg-amber-600 border-amber-500" : "bg-slate-800 border-slate-700"}`}
+            className={`flex-1 py-2 rounded-lg items-center border ${
+              role === "yonetici"
+                ? "bg-amber-600 border-amber-500"
+                : "bg-slate-800 border-slate-700"
+            }`}
           >
             <Text className="text-white text-xs font-bold">Kulüp Yöneticisi</Text>
           </TouchableOpacity>
@@ -545,7 +579,6 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
       >
         <View className="flex-1 bg-black/70 justify-center items-center px-6">
           <View className="bg-slate-800 w-full rounded-2xl p-5 border border-slate-700 shadow-2xl">
-            {/* Modal Üst Başlık ve Sağ Üst Çarpı (✕) */}
             <View className="flex-row justify-between items-start mb-4">
               <View className="flex-1 mr-3">
                 <Text className="text-white text-base font-bold">
@@ -566,7 +599,6 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
               </TouchableOpacity>
             </View>
 
-            {/* İşlem Butonları */}
             <View className="gap-2.5 mt-2">
               <TouchableOpacity
                 onPress={handleToggleRole}

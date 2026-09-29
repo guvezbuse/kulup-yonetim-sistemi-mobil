@@ -32,7 +32,7 @@ export interface InviteResult {
 }
 
 export const invitationService = {
-  // Kulübe ait bekleyen dış davetleri listeleme
+  // 1. Bekleyen Davetleri Listeleme
   getPendingInvitations: async (clubId: string): Promise<InvitationItem[]> => {
     const q = query(
       collection(db, "invitations"),
@@ -46,7 +46,7 @@ export const invitationService = {
     }));
   },
 
-  // 1. Kulübe Davet Gönderme
+  // 2. Davet Gönderme
   inviteUserToClub: async (
     clubId: string,
     email: string,
@@ -54,7 +54,7 @@ export const invitationService = {
   ): Promise<InviteResult> => {
     const cleanEmail = email.trim().toLowerCase();
 
-    // Kullanıcı sistemde kayıtlı mı?
+    // Kullanıcı zaten kayıtlı mı?
     const usersRef = collection(db, "users");
     const qUser = query(usersRef, where("email", "==", cleanEmail));
     const userSnap = await getDocs(qUser);
@@ -91,6 +91,7 @@ export const invitationService = {
       };
     }
 
+    // Eski davet varsa sil
     await invitationService.deleteInvitationByEmail(clubId, cleanEmail);
 
     const token = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
@@ -116,7 +117,7 @@ export const invitationService = {
     };
   },
 
-  // Davet linkini yenileme
+  // 3. Davet Linkini Yenileme
   resendInvitation: async (inviteId: string) => {
     const token = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
@@ -132,7 +133,7 @@ export const invitationService = {
     };
   },
 
-  // 2. Token Doğrulama
+  // 4. Token Doğrulama (InviteAcceptScreen'in Çağırdığı Fonksiyon)
   verifyToken: async (token: string): Promise<InvitationItem> => {
     const cleanToken = token.trim();
     const invitationsRef = collection(db, "invitations");
@@ -162,7 +163,7 @@ export const invitationService = {
     };
   },
 
-  // 3. Daveti Kabul Ederek Kayıt Olma & Daveti Silme
+  // 5. Daveti Kabul Ederek Kayıt Olma & Daveti Veritabanından Silme
   acceptInvitation: async ({
     invite,
     name,
@@ -197,16 +198,18 @@ export const invitationService = {
       katilim_tarihi: new Date().toISOString(),
     });
 
+    // Kabul edildiği için daveti Firestore'dan siliyoruz
     await deleteDoc(doc(db, "invitations", invite.id));
+
     return true;
   },
 
-  // Manuel İptal / Silme
+  // 6. Tekil Davet Silme (Manuel İptal)
   deleteInvitation: async (inviteId: string) => {
     await deleteDoc(doc(db, "invitations", inviteId));
   },
 
-  // E-Postaya Göre Temizleme
+  // 7. E-postaya göre bekleyen davetleri silme
   deleteInvitationByEmail: async (clubId: string, email: string) => {
     try {
       const q = query(

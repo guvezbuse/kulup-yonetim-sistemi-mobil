@@ -1,7 +1,11 @@
 import "./global.css";
 import React, { useState, useEffect } from "react";
-import { View, Text, StatusBar, TouchableOpacity, BackHandler } from "react-native";
+import { View, Text, StatusBar, TouchableOpacity, BackHandler, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./lib/firebase";
+
 import { LoginScreen } from "./screens/LoginScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
@@ -11,7 +15,8 @@ import MemberDashboardScreen from "./screens/MemberDashboardScreen";
 import ClubManageScreen from "./screens/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
-import { useAuthStore } from "./store/authStore";
+import ProfileScreen from "./screens/ProfileScreen";
+import EventsScreen from "./screens/EventsScreen";
 import type { Club } from "./types";
 
 type ScreenType =
@@ -19,162 +24,221 @@ type ScreenType =
   | "register"
   | "forgot-password"
   | "accept-invite"
+  | "profile"
   | "clubs"
+  | "announcements"
+  | "events"
   | "admin-panel"
   | "manage-club"
-  | "club-detail"
-  | "member-dashboard";
-
-type UserRole = "superadmin" | "clubadmin" | "member";
+  | "club-detail";
 
 export default function App() {
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>(["login"]);
-  const [selectedRole, setSelectedRole] = useState<UserRole>("member");
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const currentScreen = screenHistory[screenHistory.length - 1];
 
-  const user = useAuthStore((state) => state.user);
-  const profile = useAuthStore((state) => state.profile);
-  const logout = useAuthStore((state) => state.logout);
+  // Auth durumu ve Admin kontrolü
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        try {
+          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+          if (userDoc.exists() && userDoc.data().is_admin === true) {
+            setIsAdmin(true);
+          } else {
+            setIsAdmin(false);
+          }
+        } catch {
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    });
 
-  const isSuperAdmin = profile?.is_admin === true;
+    return () => unsubscribe();
+  }, []);
 
-  // Sayfa Değiştirme Fonksiyonu (Geçmişe ekler)
   const navigateTo = (screen: ScreenType) => {
+    if (currentScreen === screen) return;
     setScreenHistory((prev) => [...prev, screen]);
   };
 
-  // Bir Önceki Sayfaya Dönüş (Geri Tuşu)
   const goBack = () => {
     if (screenHistory.length > 1) {
       setScreenHistory((prev) => prev.slice(0, -1));
       return true;
     }
-    return false; // Ana ekrandaysa uygulamadan çıkışa izin ver
+    return false;
   };
 
-  // Android Donanım Geri Tuşu Dinleyicisi
   useEffect(() => {
-    const onBackPress = () => {
-      return goBack();
-    };
-
+    const onBackPress = () => goBack();
     const backSubscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => backSubscription.remove();
   }, [screenHistory]);
 
-  useEffect(() => {
-    if (user) {
-      if (isSuperAdmin) {
-        setSelectedRole("superadmin");
-      } else {
-        setSelectedRole("member");
-      }
-    }
-  }, [user, isSuperAdmin]);
-
   const handleLoginSuccess = () => {
-    if (isSuperAdmin) {
-      setSelectedRole("superadmin");
-      setScreenHistory(["admin-panel"]);
-    } else {
-      setSelectedRole("member");
-      setScreenHistory(["clubs"]);
-    }
+    setScreenHistory(["clubs"]);
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (e) {
-      console.log("Çıkış hatası:", e);
-    }
-    setScreenHistory(["login"]);
+  const handleLogout = () => {
+    Alert.alert("Çıkış Yap", "Hesabınızdan çıkış yapmak istediğinize emin misiniz?", [
+      { text: "Vazgeç", style: "cancel" },
+      {
+        text: "Çıkış Yap",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await signOut(auth);
+          } catch (e) {
+            console.log("Çıkış hatası:", e);
+          }
+          setScreenHistory(["login"]);
+        },
+      },
+    ]);
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
-      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+      <StatusBar barStyle="light-content" backgroundColor="#020617" />
 
-      {/* ROL / MOD GEÇİŞ BARI */}
+      {/* SABİT, TAŞMAYAN ÜST MENÜ */}
       {user && (
         <View
           style={{
             backgroundColor: "#020617",
-            paddingHorizontal: 12,
-            paddingVertical: 10,
             borderBottomWidth: 1,
             borderBottomColor: "#1e293b",
+            paddingHorizontal: 8,
+            paddingVertical: 8,
             flexDirection: "row",
-            justifyContent: "space-between",
             alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          <View>
-            <Text style={{ color: "#94a3b8", fontSize: 11, fontWeight: "600" }}>Aktif Rol:</Text>
-            <Text
-              style={{
-                color: isSuperAdmin ? "#818cf8" : "#34d399",
-                fontSize: 10,
-                fontWeight: "bold",
-              }}
-            >
-              {isSuperAdmin ? "Sistem Yöneticisi" : "Kulüp Üyesi"}
-            </Text>
-          </View>
+          {/* 1. Profil (Adam İkonu) */}
+          <TouchableOpacity
+            onPress={() => navigateTo("profile")}
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              borderRadius: 8,
+              backgroundColor: currentScreen === "profile" ? "#4f46e5" : "#0f172a",
+              borderWidth: 1,
+              borderColor: currentScreen === "profile" ? "#6366f1" : "#1e293b",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ fontSize: 16 }}>👤</Text>
+          </TouchableOpacity>
 
-          <View style={{ flexDirection: "row", gap: 6 }}>
+          {/* 2. Kulüpler */}
+          <TouchableOpacity
+            onPress={() => navigateTo("clubs")}
+            style={{
+              flex: 1,
+              marginHorizontal: 3,
+              paddingVertical: 7,
+              borderRadius: 8,
+              backgroundColor:
+                currentScreen === "clubs" ||
+                currentScreen === "club-detail" ||
+                currentScreen === "manage-club"
+                  ? "#2563eb"
+                  : "#0f172a",
+              borderWidth: 1,
+              borderColor:
+                currentScreen === "clubs" ||
+                currentScreen === "club-detail" ||
+                currentScreen === "manage-club"
+                  ? "#3b82f6"
+                  : "#1e293b",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Kulüpler</Text>
+          </TouchableOpacity>
+
+          {/* 3. Duyurular */}
+          <TouchableOpacity
+            onPress={() => navigateTo("announcements")}
+            style={{
+              flex: 1,
+              marginHorizontal: 3,
+              paddingVertical: 7,
+              borderRadius: 8,
+              backgroundColor: currentScreen === "announcements" ? "#059669" : "#0f172a",
+              borderWidth: 1,
+              borderColor: currentScreen === "announcements" ? "#10b981" : "#1e293b",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Duyurular</Text>
+          </TouchableOpacity>
+
+          {/* 4. Etkinlikler */}
+          <TouchableOpacity
+            onPress={() => navigateTo("events")}
+            style={{
+              flex: 1,
+              marginHorizontal: 3,
+              paddingVertical: 7,
+              borderRadius: 8,
+              backgroundColor: currentScreen === "events" ? "#7c3aed" : "#0f172a",
+              borderWidth: 1,
+              borderColor: currentScreen === "events" ? "#8b5cf6" : "#1e293b",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Etkinlikler</Text>
+          </TouchableOpacity>
+
+          {/* 5. Çıkış */}
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={{
+              marginHorizontal: 3,
+              paddingVertical: 7,
+              paddingHorizontal: 9,
+              borderRadius: 8,
+              backgroundColor: "#991b1b",
+              borderWidth: 1,
+              borderColor: "#ef4444",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Çıkış</Text>
+          </TouchableOpacity>
+
+          {/* 6. Admin Paneli (Sadece Admin ise görünür) */}
+          {isAdmin && (
             <TouchableOpacity
-              onPress={() => {
-                setSelectedRole("member");
-                navigateTo("member-dashboard");
-              }}
+              onPress={() => navigateTo("admin-panel")}
               style={{
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 6,
-                backgroundColor: selectedRole === "member" ? "#059669" : "#1e293b",
+                marginLeft: 2,
+                paddingVertical: 7,
+                paddingHorizontal: 8,
+                borderRadius: 8,
+                backgroundColor: currentScreen === "admin-panel" ? "#d97706" : "#78350f",
+                borderWidth: 1,
+                borderColor: "#f59e0b",
+                alignItems: "center",
               }}
             >
-              <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Üye Akışı</Text>
+              <Text style={{ color: "#fbbf24", fontSize: 11, fontWeight: "700" }}>Admin</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => navigateTo("clubs")}
-              style={{
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 6,
-                backgroundColor: currentScreen === "clubs" ? "#3b82f6" : "#1e293b",
-              }}
-            >
-              <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Kulüpler</Text>
-            </TouchableOpacity>
-
-            {isSuperAdmin && (
-              <TouchableOpacity
-                onPress={() => {
-                  setSelectedRole("superadmin");
-                  navigateTo("admin-panel");
-                }}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 6,
-                  backgroundColor: currentScreen === "admin-panel" ? "#d97706" : "#1e293b",
-                }}
-              >
-                <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>
-                  Admin Paneli
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          )}
         </View>
       )}
 
-      {/* EKRAN YÖNLENDİRİCİSİ */}
+      {/* SAYFA YÖNLENDİRİCİ */}
       <View style={{ flex: 1 }}>
         {currentScreen === "login" && (
           <LoginScreen
@@ -207,6 +271,8 @@ export default function App() {
           <InviteAcceptScreen onSuccess={goBack} onCancel={goBack} />
         )}
 
+        {currentScreen === "profile" && <ProfileScreen />}
+
         {currentScreen === "clubs" && (
           <ClubsScreen
             userEmail={user?.email || undefined}
@@ -218,6 +284,12 @@ export default function App() {
           />
         )}
 
+        {currentScreen === "announcements" && (
+          <MemberDashboardScreen userEmail={user?.email || undefined} onBack={goBack} />
+        )}
+
+        {currentScreen === "events" && <EventsScreen />}
+
         {currentScreen === "club-detail" && selectedClub && (
           <ClubDetailScreen
             club={selectedClub}
@@ -226,8 +298,12 @@ export default function App() {
           />
         )}
 
+        {currentScreen === "manage-club" && selectedClub && (
+          <ClubManageScreen clubId={selectedClub.id} clubName={selectedClub.ad} onBack={goBack} />
+        )}
+
         {currentScreen === "admin-panel" &&
-          (isSuperAdmin ? (
+          (isAdmin ? (
             <AdminPanelScreen
               onBack={goBack}
               onManageClub={(club: Club) => {
@@ -239,21 +315,13 @@ export default function App() {
             <View className="flex-1 justify-center items-center px-6 bg-slate-900">
               <Text className="text-red-400 text-xl font-bold text-center">Yetkisiz Erişim</Text>
               <TouchableOpacity
-                onPress={() => setScreenHistory(["clubs"])}
+                onPress={() => navigateTo("clubs")}
                 className="mt-6 bg-indigo-600 px-6 py-3 rounded-xl"
               >
                 <Text className="text-white font-semibold">Kulüpler Ekranına Dön</Text>
               </TouchableOpacity>
             </View>
           ))}
-
-        {currentScreen === "manage-club" && selectedClub && (
-          <ClubManageScreen clubId={selectedClub.id} clubName={selectedClub.ad} onBack={goBack} />
-        )}
-
-        {currentScreen === "member-dashboard" && (
-          <MemberDashboardScreen userEmail={user?.email || undefined} onBack={goBack} />
-        )}
       </View>
     </SafeAreaView>
   );
