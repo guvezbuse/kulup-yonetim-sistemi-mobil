@@ -8,10 +8,13 @@ import {
   ScrollView,
   Linking,
   Modal,
+  Image,
+  TextInput,
 } from "react-native";
 import { Input } from "../components/Input";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { clubService } from "../services/clubService";
 import { invitationService, InvitationItem } from "../services/invitationService";
 import {
   membershipService,
@@ -19,9 +22,11 @@ import {
   ClubMemberDetail,
 } from "../services/membershipService";
 import { announcementService } from "../services/announcementService";
+import { eventService, EventItem, EventStatus } from "../services/eventService";
 import { useAuthStore } from "../store/authStore";
 import { ClubRole } from "../types";
 import * as Clipboard from "expo-clipboard";
+import { notificationService } from "../services/notificationService";
 
 interface ClubManageScreenProps {
   clubId: string;
@@ -39,6 +44,13 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null);
   const [invitedTargetEmail, setInvitedTargetEmail] = useState<string>("");
 
+  // Kulüp Bilgilerini Düzenleme State'leri
+  const [editAd, setEditAd] = useState(clubName || "");
+  const [editAciklama, setEditAciklama] = useState("");
+  const [editDetayliAciklama, setEditDetayliAciklama] = useState("");
+  const [editGorselUrl, setEditGorselUrl] = useState("");
+  const [savingClubInfo, setSavingClubInfo] = useState(false);
+
   // Başvurular, Üyeler ve Bekleyen Davetler
   const [requests, setRequests] = useState<JoinRequestItem[]>([]);
   const [members, setMembers] = useState<ClubMemberDetail[]>([]);
@@ -54,6 +66,21 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
   const [clubAnnContent, setClubAnnContent] = useState("");
   const [annPublishing, setAnnPublishing] = useState(false);
 
+  // Etkinlik Yönetim State'leri
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDesc, setEventDesc] = useState("");
+  const [eventDateTime, setEventDateTime] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
+  const [eventQuota, setEventQuota] = useState("");
+  const [eventCreating, setEventCreating] = useState(false);
+
+  // Katılımcı Modalı State'leri
+  const [selectedEventApps, setSelectedEventApps] = useState<any[]>([]);
+  const [appModalVisible, setAppModalVisible] = useState(false);
+  const [selectedEventTitle, setSelectedEventTitle] = useState("");
+  const [loadingApps, setLoadingApps] = useState(false);
+
   // Kalan Süre Hesaplayıcı
   const getRemainingHoursText = (expiryDateStr?: string) => {
     if (!expiryDateStr) return { text: "Belirsiz", isExpired: true };
@@ -68,14 +95,28 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
 
   const loadData = async () => {
     try {
-      const [reqData, memData, invData] = await Promise.all([
+      const [reqData, memData, invData, eventData, allClubs] = await Promise.all([
         membershipService.getPendingRequests(clubId),
         membershipService.getClubMembers(clubId),
         invitationService.getPendingInvitations(clubId),
+        eventService.getEventsByClub(clubId),
+        clubService.getClubs(),
       ]);
 
       setRequests(reqData);
       setMembers(memData);
+      setEvents(eventData);
+
+      // Mevcut kulübün verilerini çekip form alanlarına doldur
+      const currentClub = allClubs.find((c) => c.id === clubId);
+      if (currentClub) {
+        setEditAd(currentClub.ad || clubName);
+        setEditAciklama(currentClub.aciklama || "");
+        setEditDetayliAciklama(
+          currentClub.detayliAciklama || (currentClub as any).fullDescription || "",
+        );
+        setEditGorselUrl(currentClub.gorselUrl || (currentClub as any).imageUrl || "");
+      }
 
       const memberEmails = new Set(
         memData.map((m: ClubMemberDetail) => (m.email || "").toLowerCase()),
@@ -101,6 +142,51 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
   useEffect(() => {
     loadData();
   }, [clubId]);
+
+  // Kulüp Bilgilerini Kaydetme
+  const handleSaveClubInfo = async () => {
+    if (!editAd.trim()) {
+      Alert.alert("Hata", "Kulüp adı boş bırakılamaz.");
+      return;
+    }
+
+    setSavingClubInfo(true);
+    try {
+      await clubService.updateClub(clubId, {
+        ad: editAd,
+        aciklama: editAciklama,
+        detayliAciklama: editDetayliAciklama,
+        gorselUrl: editGorselUrl,
+      });
+      Alert.alert("Başarılı", "Kulüp bilgileri güncellendi.");
+      loadData();
+    } catch (err: any) {
+      Alert.alert("Hata", err.message || "Kulüp bilgileri güncellenemedi.");
+    } finally {
+      setSavingClubInfo(false);
+    }
+  };
+
+  // Fotoğraf Silme
+  const handleDeletePhoto = async () => {
+    Alert.alert("Fotoğrafı Sil", "Kulüp görselini kaldırmak istediğinize emin misiniz?", [
+      { text: "Vazgeç", style: "cancel" },
+      {
+        text: "Evet, Sil",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await clubService.deleteClubPhoto(clubId);
+            setEditGorselUrl("");
+            Alert.alert("Başarılı", "Kulüp görseli silindi.");
+            loadData();
+          } catch (e: any) {
+            Alert.alert("Hata", "Görsel silinemedi.");
+          }
+        },
+      },
+    ]);
+  };
 
   const handleSendInvite = async () => {
     if (!email.trim() || !email.includes("@")) {
@@ -174,9 +260,9 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
   const handleSendEmailInvite = async () => {
     if (!createdInviteLink || !invitedTargetEmail) return;
 
-    const subject = encodeURIComponent(`${clubName} Kulübü Daveti`);
+    const subject = encodeURIComponent(`${editAd || clubName} Kulübü Daveti`);
     const body = encodeURIComponent(
-      `Merhaba,\n\n${clubName} kadrosuna davet edildiniz!\n\nDavet bağlantınız (72 saat geçerlidir):\n${createdInviteLink}`,
+      `Merhaba,\n\n${editAd || clubName} kadrosuna davet edildiniz!\n\nDavet bağlantınız (72 saat geçerlidir):\n${createdInviteLink}`,
     );
     const mailUrl = `mailto:${invitedTargetEmail}?subject=${subject}&body=${body}`;
 
@@ -279,14 +365,28 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
       const managerName = profile?.name
         ? `${profile.name} ${profile.surname || ""}`.trim()
         : "Kulüp Yöneticisi";
+
       await announcementService.createClubAnnouncement(
         clubId,
-        clubName,
+        editAd || clubName,
         clubAnnTitle,
         clubAnnContent,
         user?.uid || "manager",
         managerName,
       );
+
+      try {
+        await notificationService.notifyAnnouncement(
+          "kulup",
+          "kulup_uyeleri",
+          clubId,
+          `${editAd || clubName}: ${clubAnnTitle}`,
+          clubAnnContent,
+        );
+      } catch (pushErr) {
+        console.log("Kulüp duyuru bildirimi hatası:", pushErr);
+      }
+
       Alert.alert("Başarılı", "Kulüp duyurusu yayınlandı.");
       setClubAnnTitle("");
       setClubAnnContent("");
@@ -297,16 +397,347 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
     }
   };
 
+  // Etkinlik İşlemleri
+  const handleCreateEvent = async (asDraft: boolean = false) => {
+    if (!eventTitle.trim() || !eventDesc.trim() || !eventLocation.trim() || !eventDateTime.trim()) {
+      Alert.alert(
+        "Hata",
+        "Lütfen etkinlik adı, tarih/saat, konum ve açıklama alanlarını doldurun.",
+      );
+      return;
+    }
+
+    setEventCreating(true);
+    try {
+      const eventStatus = asDraft ? "taslak" : "yayinlandi";
+
+      await eventService.createEvent({
+        club_id: clubId,
+        club_ad: editAd || clubName,
+        baslik: eventTitle,
+        aciklama: eventDesc,
+        tarih_saat: eventDateTime,
+        konum: eventLocation,
+        kontenjan: eventQuota ? parseInt(eventQuota, 10) : null,
+        olusturan_id: user?.uid || "manager",
+        durum: eventStatus,
+      });
+
+      if (!asDraft) {
+        try {
+          await notificationService.notifyEventPublished(clubId, eventTitle, eventDateTime);
+        } catch (pushErr) {
+          console.log("Etkinlik bildirimi gönderilirken hata:", pushErr);
+        }
+      }
+
+      Alert.alert(
+        "Başarılı",
+        asDraft
+          ? "Etkinlik taslak olarak kaydedildi."
+          : "Etkinlik yayınlandı ve üyelere bildirildi.",
+      );
+
+      setEventTitle("");
+      setEventDesc("");
+      setEventDateTime("");
+      setEventLocation("");
+      setEventQuota("");
+      loadData();
+    } catch (err: any) {
+      Alert.alert("Hata", err.message || "Etkinlik oluşturulamadı.");
+    } finally {
+      setEventCreating(false);
+    }
+  };
+
+  const handleUpdateEventStatus = async (eventId: string, newStatus: EventStatus) => {
+    try {
+      await eventService.updateEventStatus(eventId, newStatus);
+      loadData();
+    } catch (err: any) {
+      Alert.alert("Hata", err.message || "Etkinlik durumu güncellenemedi.");
+    }
+  };
+
+  const handleDeleteEvent = (eventId: string, title: string) => {
+    Alert.alert("Etkinliği Sil", `"${title}" etkinliğini silmek istediğinize emin misiniz?`, [
+      { text: "Vazgeç", style: "cancel" },
+      {
+        text: "Sil",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await eventService.deleteEvent(eventId);
+            loadData();
+          } catch (err: any) {
+            Alert.alert("Hata", "Etkinlik silinemedi.");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleViewApplications = async (eventId: string, title: string) => {
+    setSelectedEventTitle(title);
+    setLoadingApps(true);
+    setAppModalVisible(true);
+    try {
+      const data = await eventService.getEventApplications(eventId);
+      setSelectedEventApps(data);
+    } catch (e) {
+      Alert.alert("Hata", "Başvurular çekilemedi.");
+    } finally {
+      setLoadingApps(false);
+    }
+  };
+
+  const getStatusBadge = (durum: EventStatus) => {
+    switch (durum) {
+      case "yayinlandi":
+        return {
+          text: "Yayınlandı",
+          bg: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
+        };
+      case "tamamlandi":
+        return { text: "Tamamlandı", bg: "bg-slate-500/20 text-slate-400 border-slate-500/40" };
+      case "iptal":
+        return { text: "İptal", bg: "bg-rose-500/20 text-rose-400 border-rose-500/40" };
+      default:
+        return { text: "Taslak", bg: "bg-amber-500/20 text-amber-400 border-amber-500/40" };
+    }
+  };
+
   return (
     <ScrollView className="flex-1 bg-slate-900 px-4 pt-4" showsVerticalScrollIndicator={false}>
       <TouchableOpacity onPress={onBack} className="mb-4">
         <Text className="text-indigo-400 font-semibold">← Geri Dön</Text>
       </TouchableOpacity>
 
-      <Text className="text-2xl font-bold text-white">{clubName}</Text>
+      <Text className="text-2xl font-bold text-white">{editAd || clubName}</Text>
       <Text className="text-slate-400 text-sm mb-4">Kulüp Yönetim Paneli</Text>
 
-      {/* 1. DUYURU YAYINLAMA */}
+      {/* 1. KULÜP BİLGİLERİNİ DÜZENLE (GÖRSEL / AÇIKLAMA / BAŞLIK) */}
+      <Card className="mb-6 border border-emerald-500/40 bg-emerald-950/10">
+        <Text className="text-emerald-400 font-bold text-base mb-1">
+          ⚙ Kulüp Bilgilerini Düzenle
+        </Text>
+        <Text className="text-slate-400 text-xs mb-4">
+          Kulüp başlığını, kısa ve detaylı açıklamayı ile kapak fotoğrafını güncelleyin.
+        </Text>
+
+        <Input
+          label="Kulüp Adı / Başlığı"
+          placeholder="Örn: Tiyatro Kulübü"
+          value={editAd}
+          onChangeText={setEditAd}
+        />
+        <Input
+          label="Kısa Açıklama (Listede Görünür)"
+          placeholder="Örn: Sahne sanatları ve oyunculuk atölyeleri"
+          value={editAciklama}
+          onChangeText={setEditAciklama}
+        />
+
+        <View className="mb-3">
+          <Text className="text-slate-300 text-xs font-semibold mb-1">
+            Kulüp Hakkında (Detay Sayfası Metni)
+          </Text>
+          <TextInput
+            value={editDetayliAciklama}
+            onChangeText={setEditDetayliAciklama}
+            placeholder="Kulübün vizyonu, misyonu ve detaylı tanıtım metni..."
+            placeholderTextColor="#64748b"
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+            className="bg-slate-800 text-white rounded-xl p-3 text-xs border border-slate-700"
+          />
+        </View>
+
+        <Input
+          label="Fotoğraf / Banner Bağlantısı (URL)"
+          placeholder="https://images.unsplash.com/..."
+          value={editGorselUrl}
+          onChangeText={setEditGorselUrl}
+        />
+
+        {/* Görsel Önizleme ve Fotoğraf Silme/Değiştirme */}
+        {editGorselUrl ? (
+          <View className="mb-4">
+            <Text className="text-slate-400 text-xs mb-2 font-semibold">
+              Mevcut Görsel Önizlemesi:
+            </Text>
+            <View className="w-full h-36 rounded-xl overflow-hidden border border-slate-700">
+              <Image source={{ uri: editGorselUrl }} className="w-full h-full" resizeMode="cover" />
+            </View>
+            <TouchableOpacity
+              onPress={handleDeletePhoto}
+              className="bg-rose-950/60 border border-rose-600/60 py-2 rounded-xl items-center mt-2"
+            >
+              <Text className="text-rose-400 text-xs font-bold">🗑 Fotoğrafı Kaldır / Sil</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <Button
+          title="Kulüp Bilgilerini Kaydet"
+          onPress={handleSaveClubInfo}
+          loading={savingClubInfo}
+          className="bg-emerald-600 active:bg-emerald-700 mt-1"
+        />
+      </Card>
+
+      {/* 2. ETKİNLİK OLUŞTURMA & YÖNETİMİ */}
+      <Card className="mb-6 border border-purple-500/40">
+        <Text className="text-purple-400 font-bold text-base mb-1">
+          🗓️ Yeni Kulüp Etkinliği Oluştur
+        </Text>
+        <Text className="text-slate-400 text-xs mb-3">
+          Kontenjan boş bırakılırsa limitsiz olarak kaydedilir.
+        </Text>
+
+        <Input
+          label="Etkinlik Başlığı"
+          placeholder="Örn: Yapay Zeka Atölyesi"
+          value={eventTitle}
+          onChangeText={setEventTitle}
+        />
+        <Input
+          label="Tarih ve Saat"
+          placeholder="Örn: 15 Ekim 2026 - 14:00"
+          value={eventDateTime}
+          onChangeText={setEventDateTime}
+        />
+        <Input
+          label="Konum / Salon"
+          placeholder="Örn: D-Block Konferans Salonu"
+          value={eventLocation}
+          onChangeText={setEventLocation}
+        />
+        <Input
+          label="Kontenjan (Opsiyonel)"
+          placeholder="Limitsiz için boş bırakın"
+          keyboardType="numeric"
+          value={eventQuota}
+          onChangeText={setEventQuota}
+        />
+        <Input
+          label="Açıklama"
+          placeholder="Etkinlik akışı, gereksinimler..."
+          value={eventDesc}
+          onChangeText={setEventDesc}
+          multiline
+        />
+
+        <View className="flex-row gap-2 mt-2">
+          <TouchableOpacity
+            onPress={() => handleCreateEvent(true)}
+            disabled={eventCreating}
+            className="flex-1 bg-slate-800 border border-slate-700 py-3 rounded-xl items-center"
+          >
+            <Text className="text-slate-300 font-bold text-xs">Taslak Kaydet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handleCreateEvent(false)}
+            disabled={eventCreating}
+            className="flex-1 bg-purple-600 active:bg-purple-700 py-3 rounded-xl items-center"
+          >
+            {eventCreating ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text className="text-white font-bold text-xs">Etkinliği Yayınla</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Card>
+
+      {/* 3. KULÜBÜN ETKİNLİK LİSTESİ & DURUM DEĞİŞTİRME */}
+      <Text className="text-base font-bold text-white mb-2">
+        Kulüp Etkinlikleri ({events.length})
+      </Text>
+      <View className="mb-6">
+        {loadingData ? (
+          <ActivityIndicator color="#8b5cf6" />
+        ) : events.length === 0 ? (
+          <View className="bg-slate-800/60 p-3 rounded-xl border border-slate-700/60">
+            <Text className="text-slate-400 text-xs text-center">
+              Henüz etkinlik oluşturulmadı.
+            </Text>
+          </View>
+        ) : (
+          events.map((ev) => {
+            const badge = getStatusBadge(ev.durum);
+            return (
+              <View
+                key={ev.id}
+                className="bg-slate-800 p-3.5 rounded-xl mb-3 border border-slate-700"
+              >
+                <View className="flex-row justify-between items-start mb-1.5">
+                  <Text className="text-white font-bold text-sm flex-1 mr-2">{ev.baslik}</Text>
+                  <View className={`px-2 py-0.5 rounded border ${badge.bg}`}>
+                    <Text className="text-[10px] font-bold uppercase">{badge.text}</Text>
+                  </View>
+                </View>
+
+                <Text className="text-slate-400 text-xs mb-2" numberOfLines={2}>
+                  {ev.aciklama}
+                </Text>
+
+                <View className="flex-row justify-between text-[11px] text-slate-400 mb-3 border-t border-slate-700/50 pt-2">
+                  <Text className="text-slate-400 text-[11px]">📍 {ev.konum}</Text>
+                  <Text className="text-slate-400 text-[11px]">📅 {ev.tarih_saat}</Text>
+                  <Text className="text-slate-400 text-[11px]">
+                    👥 {ev.kontenjan ? `${ev.kontenjan} Kişi` : "Limitsiz"}
+                  </Text>
+                </View>
+
+                {/* Yaşam Döngüsü Butonları */}
+                <View className="flex-row gap-1.5 justify-end items-center pt-1 border-t border-slate-700/50">
+                  {ev.durum === "taslak" && (
+                    <TouchableOpacity
+                      onPress={() => handleUpdateEventStatus(ev.id, "yayinlandi")}
+                      className="bg-emerald-600/80 px-2.5 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-white text-[10px] font-bold">Yayınla</Text>
+                    </TouchableOpacity>
+                  )}
+                  {ev.durum === "yayinlandi" && (
+                    <TouchableOpacity
+                      onPress={() => handleUpdateEventStatus(ev.id, "tamamlandi")}
+                      className="bg-blue-600/80 px-2.5 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-white text-[10px] font-bold">Tamamlandı Yap</Text>
+                    </TouchableOpacity>
+                  )}
+                  {ev.durum !== "iptal" && ev.durum !== "tamamlandi" && (
+                    <TouchableOpacity
+                      onPress={() => handleUpdateEventStatus(ev.id, "iptal")}
+                      className="bg-amber-600/80 px-2.5 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-white text-[10px] font-bold">İptal Et</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => handleDeleteEvent(ev.id, ev.baslik)}
+                    className="bg-rose-950/60 border border-rose-600/60 px-2 py-1.5 rounded-lg"
+                  >
+                    <Text className="text-rose-400 text-[10px] font-bold">Sil</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleViewApplications(ev.id, ev.baslik)}
+                    className="bg-indigo-600/80 px-2.5 py-1.5 rounded-lg mr-auto"
+                  >
+                    <Text className="text-white text-[10px] font-bold">📋 Başvuruları Gör</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </View>
+
+      {/* 4. DUYURU YAYINLAMA */}
       <Card className="mb-6 border border-indigo-500/30">
         <Text className="text-indigo-400 font-bold text-base mb-1">
           📢 Kulüp Üyelerine Duyuru Yayınla
@@ -335,7 +766,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         />
       </Card>
 
-      {/* 2. BEKLEYEN BAŞVURULAR */}
+      {/* 5. BEKLEYEN BAŞVURULAR */}
       <Text className="text-base font-bold text-white mb-2">
         Bekleyen Başvurular ({requests.length})
       </Text>
@@ -380,7 +811,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         )}
       </View>
 
-      {/* 3. KULÜP ÜYELERİ */}
+      {/* 6. KULÜP ÜYELERİ */}
       <Text className="text-base font-bold text-white mb-2">Kulüp Üyeleri ({members.length})</Text>
       <View className="mb-6">
         {loadingData ? (
@@ -438,7 +869,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         )}
       </View>
 
-      {/* 4. BEKLEYEN DIŞ DAVETLER (SÜRE VE YENİLEME ENTEGRASYONLU) */}
+      {/* 7. BEKLEYEN DIŞ DAVETLER */}
       <Text className="text-base font-bold text-white mb-2">
         Bekleyen Dış Davetler ({invitations.length})
       </Text>
@@ -499,7 +930,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         )}
       </View>
 
-      {/* 5. DAVET OLUŞTURMA */}
+      {/* 8. DAVET OLUŞTURMA */}
       <Card className="mb-10">
         <Text className="text-white font-bold text-sm mb-1">E-Posta ile Üye / Yönetici Ekle</Text>
         <Text className="text-slate-400 text-xs mb-3">
@@ -570,7 +1001,7 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
         )}
       </Card>
 
-      {/* SAĞ ÜSTTE ÇARPI OLAN MODAL */}
+      {/* SAĞ ÜSTTE ÇARPI OLAN ÜYE YÖNETİM MODALI */}
       <Modal
         visible={modalVisible}
         transparent
@@ -625,6 +1056,56 @@ export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManag
                 <Text className="text-rose-400 font-bold text-xs">Kulüpten Çıkar (Sil)</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* KATILIM BAŞVURULARI MODALI */}
+      <Modal visible={appModalVisible} transparent animationType="fade">
+        <View className="flex-1 bg-black/75 justify-center px-4">
+          <View className="bg-slate-800 p-5 rounded-2xl border border-slate-700 max-h-[80%]">
+            <View className="flex-row justify-between items-center mb-3">
+              <View className="flex-1 mr-2">
+                <Text className="text-white font-bold text-sm">{selectedEventTitle}</Text>
+                <Text className="text-slate-400 text-[10px]">
+                  Katılım Başvuruları (İlk başvuran en üstte)
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setAppModalVisible(false)}
+                className="bg-slate-700 p-1.5 rounded-full"
+              >
+                <Text className="text-slate-300 font-bold text-xs">✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingApps ? (
+              <ActivityIndicator color="#6366f1" className="py-6" />
+            ) : selectedEventApps.length === 0 ? (
+              <Text className="text-slate-400 text-xs text-center py-6">
+                Henüz katılım başvurusu yapılmamış.
+              </Text>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {selectedEventApps.map((app, index) => (
+                  <View
+                    key={app.id}
+                    className="bg-slate-900 p-3 rounded-xl mb-2 border border-slate-700/70"
+                  >
+                    <View className="flex-row justify-between items-center mb-1">
+                      <Text className="text-white font-bold text-xs">
+                        #{index + 1} {app.user_name}
+                      </Text>
+                      <Text className="text-indigo-400 text-[10px] font-semibold">{app.tarih}</Text>
+                    </View>
+                    <Text className="text-slate-400 text-[10px] mb-1">{app.user_email}</Text>
+                    <Text className="text-slate-300 text-xs bg-slate-800/80 p-2 rounded-lg italic">
+                      "{app.mesaj}"
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>

@@ -7,10 +7,12 @@ import {
   ActivityIndicator,
   TextInput,
   ScrollView,
+  Image,
 } from "react-native";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
 import { membershipService } from "../services/membershipService";
+import { notificationService } from "../services/notificationService";
 import { useAuthStore } from "../store/authStore";
 import { Club } from "../types";
 
@@ -20,8 +22,13 @@ interface ClubDetailScreenProps {
   onManage?: () => void;
 }
 
+// Görseli bulunmayan kulüpler için kullanılacak varsayılan Unsplash kapak görseli
+const DEFAULT_BANNER =
+  "https://images.unsplash.com/photo-1523580494863-6f3031224c94?q=80&w=1000&auto=format&fit=crop";
+
 export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailScreenProps) {
   const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [membershipStatus, setMembershipStatus] = useState<string | null>(null);
@@ -57,7 +64,20 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
     if (!user) return;
     setSubmitting(true);
     try {
+      // 1. Veritabanına başvuruyu kaydet
       await membershipService.applyToClub(club.id, user.uid, user.email || "", motivationMessage);
+
+      // 2. Kulüp yöneticilerine bildirim fırlat
+      try {
+        const applicantName = profile?.name
+          ? `${profile.name} ${profile.surname || ""}`.trim()
+          : user.email || "Bir öğrenci";
+
+        await notificationService.notifyMembershipApplication(club.id, applicantName);
+      } catch (pushErr) {
+        console.log("Kulüp yöneticisine başvuru bildirimi gönderilemedi:", pushErr);
+      }
+
       Alert.alert("Başarılı", "Katılma başvurunuz kulüp yöneticisine iletildi.");
       setMembershipStatus("beklemede");
       setMyRole("uye");
@@ -68,35 +88,53 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
     }
   };
 
-  // Hem standart 'yonetici' hem de eski veritabanı kayıtlarındaki 'yönetici' yazımını doğrular
+  // Hem standart 'yonetici' hem de 'yönetici' / 'baskan' yazımlarını kontrol eder
   const isClubManager =
     myRole === "yonetici" ||
     (myRole as any) === "yönetici" ||
     myRole === "baskan" ||
     (myRole as any) === "başkan";
 
+  // Kulübün Firestore'daki kapak görseli veya varsayılan banner
+  const bannerUrl = club.gorselUrl || club.imageUrl || DEFAULT_BANNER;
+
+  // Genişletilmiş açıklama alanı
+  const fullDescription =
+    club.detayliAciklama ||
+    club.fullDescription ||
+    `${club.ad}, öğrencilerin sosyal, kültürel ve akademik yönden gelişimlerini desteklemek, kampüs içinde nitelikli etkinlikler düzenlemek ve üyeler arasında güçlü bir iletişim ağı kurmak amacıyla faaliyet göstermektedir.`;
+
   return (
     <View className="flex-1 bg-slate-900 px-4 pt-4">
-      <TouchableOpacity onPress={onBack} className="mb-4">
-        <Text className="text-indigo-400 font-semibold">← Geri Dön</Text>
+      <TouchableOpacity onPress={onBack} className="mb-3">
+        <Text className="text-indigo-400 font-semibold text-sm">← Geri Dön</Text>
       </TouchableOpacity>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 24 }}
+      >
+        {/* KULÜP KAPAK GÖRSELİ / BANNER */}
+        <View className="w-full h-44 rounded-2xl overflow-hidden mb-4 border border-slate-800 bg-slate-800">
+          <Image source={{ uri: bannerUrl }} className="w-full h-full" resizeMode="cover" />
+        </View>
+
+        {/* KULÜP BAŞLIĞI VE KISA ÖZET */}
         <Text className="text-2xl font-bold text-white">{club.ad}</Text>
-        <Text className="text-slate-400 text-sm mt-1 mb-6">{club.aciklama}</Text>
+        <Text className="text-slate-400 text-xs mt-1 mb-5">{club.aciklama}</Text>
 
         {loading ? (
           <ActivityIndicator color="#6366f1" className="mt-6" />
         ) : (
           <>
-            {/* 1. KULÜP YÖNETİCİ KARTI: Sadece kulüp yöneticisi/başkanı ise göster */}
+            {/* 1. KULÜP YÖNETİCİ KARTI */}
             {isClubManager && (
               <Card className="mb-4 border border-indigo-500/40 bg-indigo-950/20">
                 <View className="flex-row justify-between items-center">
                   <View className="flex-1 mr-2">
                     <Text className="text-white font-bold text-sm">Kulüp Yönetici Yetkisi</Text>
                     <Text className="text-slate-400 text-xs mt-0.5">
-                      Başvuruları onaylayabilir, üyelere duyuru gönderebilirsiniz.
+                      Başvuruları onaylayabilir, üyelere duyuru ve etkinlik yayınlayabilirsiniz.
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -110,14 +148,20 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
               </Card>
             )}
 
-            {/* 2. KULÜP BİLGİLERİ */}
+            {/* 2. KULÜP HAKKINDA (DETAYLI AÇIKLAMA KARTI) */}
+            <Card className="mb-4">
+              <Text className="text-white font-bold text-sm mb-2">Kulüp Hakkında</Text>
+              <Text className="text-slate-300 text-xs leading-5">{fullDescription}</Text>
+            </Card>
+
+            {/* 3. KULÜP BİLGİLERİ VE ÜYELİK DURUMU */}
             <Card className="mb-4">
               <Text className="text-white font-bold text-sm mb-3">Kulüp Bilgileri</Text>
-              <View className="flex-row justify-between py-1 border-b border-slate-800">
+              <View className="flex-row justify-between py-2 border-b border-slate-800">
                 <Text className="text-slate-400 text-xs">Durum</Text>
                 <Text className="text-emerald-400 font-bold text-xs">AKTİF</Text>
               </View>
-              <View className="flex-row justify-between py-1 mt-1">
+              <View className="flex-row justify-between py-2 mt-1">
                 <Text className="text-slate-400 text-xs">Üyelik Durumunuz</Text>
                 <Text
                   className={`font-bold text-xs ${
@@ -139,19 +183,21 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
               </View>
             </Card>
 
-            {/* 3. BAŞVURU / DURUM KARTLARI */}
+            {/* 4. BAŞVURU VEYA ÜYELİK DURUM KARTLARI */}
             {membershipStatus === "aktif" ? (
               <Card className="mb-4 border border-emerald-500/30 bg-emerald-950/20">
                 <Text className="text-emerald-400 font-bold text-sm">✓ Aktif Kulüp Üyesisiniz</Text>
                 <Text className="text-slate-300 text-xs mt-1">
-                  Bu kulübün etkinliklerine katılabilir ve kulüp duyurularını takip edebilirsiniz.
+                  Bu kulübün özel duyurularını, etkinliklerini takip edebilir ve organizasyonlarda
+                  rol alabilirsiniz.
                 </Text>
               </Card>
             ) : membershipStatus === "beklemede" ? (
               <Card className="mb-4 border border-amber-500/30 bg-amber-950/20">
                 <Text className="text-amber-400 font-bold text-sm">⏳ Başvurunuz İnceleniyor</Text>
                 <Text className="text-slate-300 text-xs mt-1">
-                  Kulübe katılma başvurunuz kulüp yöneticisi tarafından inceleniyor.
+                  Kulübe katılma talebiniz ve ilettiğiniz mesaj kulüp yöneticisi tarafından
+                  incelenmektedir.
                 </Text>
               </Card>
             ) : (

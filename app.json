@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "756e020d-e0ad-452d-b2c8-f49ebb4dbcce"
+      }
+    },
+    "android": {
+      "package": "com.buseguvez.kulupyonetimsistemimobil"
+    }
+  }
+}

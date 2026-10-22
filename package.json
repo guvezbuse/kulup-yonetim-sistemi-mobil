@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@expo/vector-icons": "^15.1.1"
+  },
+  "devDependencies": {
+    "@types/expo__vector-icons": "^9.0.1",
+    "typescript": "~6.0.3"
+  }
+}

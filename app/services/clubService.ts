@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteField,
   doc,
   getDocs,
   query,
@@ -9,7 +10,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Club } from "../types"; // index.ts dosyan types/ altında ise
+import { Club } from "../types";
 
 const CLUBS_COLLECTION = "clubs";
 const INVITATIONS_COLLECTION = "invitations";
@@ -57,6 +58,37 @@ export const clubService = {
     const yeniDurum = mevcutDurum === "aktif" ? "pasif" : "aktif";
     await updateDoc(clubRef, {
       durum: yeniDurum,
+    });
+  },
+
+  // 4. Kulüp bilgilerini güncelleme (Yönetici / Admin)
+  updateClub: async (
+    clubId: string,
+    data: {
+      ad?: string;
+      aciklama?: string;
+      detayliAciklama?: string;
+      gorselUrl?: string;
+    },
+  ) => {
+    const clubRef = doc(db, CLUBS_COLLECTION, clubId);
+    const updatePayload: Record<string, any> = {};
+
+    if (data.ad !== undefined) updatePayload.ad = data.ad.trim();
+    if (data.aciklama !== undefined) updatePayload.aciklama = data.aciklama.trim();
+    if (data.detayliAciklama !== undefined)
+      updatePayload.detayliAciklama = data.detayliAciklama.trim();
+    if (data.gorselUrl !== undefined) updatePayload.gorselUrl = data.gorselUrl.trim();
+
+    await updateDoc(clubRef, updatePayload);
+  },
+
+  // 5. Kulüp fotoğrafını/banner'ını kaldırma/silme
+  deleteClubPhoto: async (clubId: string) => {
+    const clubRef = doc(db, CLUBS_COLLECTION, clubId);
+    await updateDoc(clubRef, {
+      gorselUrl: deleteField(),
+      imageUrl: deleteField(),
     });
   },
 };

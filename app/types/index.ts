@@ -19,6 +19,7 @@ export interface User {
 }
 
 // 2. Kulüp Modeli
+// 2. Kulüp Modeli
 export interface Club {
   id: string;
   ad: string;
@@ -26,6 +27,12 @@ export interface Club {
   olusturan_admin_id: string;
   durum: "aktif" | "pasif";
   createdAt: string;
+
+  // Detay Sayfası ve UI geliştirmeleri için eklenen opsiyonel alanlar:
+  gorselUrl?: string;
+  imageUrl?: string;
+  detayliAciklama?: string;
+  fullDescription?: string;
 }
 
 // 3. Üyelik Modeli (Kullanıcı <-> Kulüp çoktan çoğa ilişki)

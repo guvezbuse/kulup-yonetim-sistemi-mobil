@@ -1,6 +1,6 @@
 import "./global.css";
 import React, { useState, useEffect } from "react";
-import { View, Text, StatusBar, TouchableOpacity, BackHandler, Alert } from "react-native";
+import { View, Text, StatusBar, TouchableOpacity, BackHandler, Alert, LogBox } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -10,14 +10,19 @@ import { LoginScreen } from "./screens/LoginScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
 import ClubsScreen from "./screens/ClubsScreen";
-import AdminPanelScreen from "./screens/AdminPanelScreen";
+import AdminDashboardScreen from "./screens/AdminDashboardScreen";
 import MemberDashboardScreen from "./screens/MemberDashboardScreen";
 import ClubManageScreen from "./screens/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import EventsScreen from "./screens/EventsScreen";
+import NotificationsScreen from "./screens/NotificationsScreen";
 import type { Club } from "./types";
+import { notificationService } from "./services/notificationService";
+
+LogBox.ignoreAllLogs(true);
+LogBox.ignoreLogs(["expo-notifications: Android Push notifications functionality"]);
 
 type ScreenType =
   | "login"
@@ -28,6 +33,7 @@ type ScreenType =
   | "clubs"
   | "announcements"
   | "events"
+  | "notifications"
   | "admin-panel"
   | "manage-club"
   | "club-detail";
@@ -45,6 +51,9 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        // Cihazın bildirim tokenını al ve users tablosuna kaydet
+        notificationService.registerForPushNotificationsAsync(currentUser.uid);
+
         try {
           const userDoc = await getDoc(doc(db, "users", currentUser.uid));
           if (userDoc.exists() && userDoc.data().is_admin === true) {
@@ -115,7 +124,7 @@ export default function App() {
             backgroundColor: "#020617",
             borderBottomWidth: 1,
             borderBottomColor: "#1e293b",
-            paddingHorizontal: 8,
+            paddingHorizontal: 6,
             paddingVertical: 8,
             flexDirection: "row",
             alignItems: "center",
@@ -127,7 +136,7 @@ export default function App() {
             onPress={() => navigateTo("profile")}
             style={{
               paddingVertical: 6,
-              paddingHorizontal: 10,
+              paddingHorizontal: 8,
               borderRadius: 8,
               backgroundColor: currentScreen === "profile" ? "#4f46e5" : "#0f172a",
               borderWidth: 1,
@@ -136,7 +145,7 @@ export default function App() {
               justifyContent: "center",
             }}
           >
-            <Text style={{ fontSize: 16 }}>👤</Text>
+            <Text style={{ fontSize: 15 }}>👤</Text>
           </TouchableOpacity>
 
           {/* 2. Kulüpler */}
@@ -144,7 +153,7 @@ export default function App() {
             onPress={() => navigateTo("clubs")}
             style={{
               flex: 1,
-              marginHorizontal: 3,
+              marginHorizontal: 2,
               paddingVertical: 7,
               borderRadius: 8,
               backgroundColor:
@@ -163,7 +172,7 @@ export default function App() {
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Kulüpler</Text>
+            <Text style={{ color: "#ffffff", fontSize: 10.5, fontWeight: "700" }}>Kulüpler</Text>
           </TouchableOpacity>
 
           {/* 3. Duyurular */}
@@ -171,7 +180,7 @@ export default function App() {
             onPress={() => navigateTo("announcements")}
             style={{
               flex: 1,
-              marginHorizontal: 3,
+              marginHorizontal: 2,
               paddingVertical: 7,
               borderRadius: 8,
               backgroundColor: currentScreen === "announcements" ? "#059669" : "#0f172a",
@@ -180,7 +189,7 @@ export default function App() {
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Duyurular</Text>
+            <Text style={{ color: "#ffffff", fontSize: 10.5, fontWeight: "700" }}>Duyurular</Text>
           </TouchableOpacity>
 
           {/* 4. Etkinlikler */}
@@ -188,7 +197,7 @@ export default function App() {
             onPress={() => navigateTo("events")}
             style={{
               flex: 1,
-              marginHorizontal: 3,
+              marginHorizontal: 2,
               paddingVertical: 7,
               borderRadius: 8,
               backgroundColor: currentScreen === "events" ? "#7c3aed" : "#0f172a",
@@ -197,34 +206,35 @@ export default function App() {
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Etkinlikler</Text>
+            <Text style={{ color: "#ffffff", fontSize: 10.5, fontWeight: "700" }}>Etkinlikler</Text>
           </TouchableOpacity>
 
-          {/* 5. Çıkış */}
+          {/* 5. Bildirimler İkonu */}
           <TouchableOpacity
-            onPress={handleLogout}
+            onPress={() => navigateTo("notifications")}
             style={{
-              marginHorizontal: 3,
-              paddingVertical: 7,
-              paddingHorizontal: 9,
+              paddingVertical: 6,
+              paddingHorizontal: 8,
+              marginHorizontal: 2,
               borderRadius: 8,
-              backgroundColor: "#991b1b",
+              backgroundColor: currentScreen === "notifications" ? "#312e81" : "#0f172a",
               borderWidth: 1,
-              borderColor: "#ef4444",
+              borderColor: currentScreen === "notifications" ? "#6366f1" : "#1e293b",
               alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "700" }}>Çıkış</Text>
+            <Text style={{ fontSize: 14 }}>🔔</Text>
           </TouchableOpacity>
 
-          {/* 6. Admin Paneli (Sadece Admin ise görünür) */}
+          {/* 6. Admin Paneli */}
           {isAdmin && (
             <TouchableOpacity
               onPress={() => navigateTo("admin-panel")}
               style={{
-                marginLeft: 2,
+                marginHorizontal: 2,
                 paddingVertical: 7,
-                paddingHorizontal: 8,
+                paddingHorizontal: 7,
                 borderRadius: 8,
                 backgroundColor: currentScreen === "admin-panel" ? "#d97706" : "#78350f",
                 borderWidth: 1,
@@ -232,9 +242,26 @@ export default function App() {
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: "#fbbf24", fontSize: 11, fontWeight: "700" }}>Admin</Text>
+              <Text style={{ color: "#fbbf24", fontSize: 10.5, fontWeight: "700" }}>Admin</Text>
             </TouchableOpacity>
           )}
+
+          {/* 7. Çıkış */}
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={{
+              marginHorizontal: 2,
+              paddingVertical: 7,
+              paddingHorizontal: 7,
+              borderRadius: 8,
+              backgroundColor: "#991b1b",
+              borderWidth: 1,
+              borderColor: "#ef4444",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#ffffff", fontSize: 10.5, fontWeight: "700" }}>Çıkış</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -290,6 +317,8 @@ export default function App() {
 
         {currentScreen === "events" && <EventsScreen />}
 
+        {currentScreen === "notifications" && <NotificationsScreen onBack={goBack} />}
+
         {currentScreen === "club-detail" && selectedClub && (
           <ClubDetailScreen
             club={selectedClub}
@@ -304,7 +333,7 @@ export default function App() {
 
         {currentScreen === "admin-panel" &&
           (isAdmin ? (
-            <AdminPanelScreen
+            <AdminDashboardScreen
               onBack={goBack}
               onManageClub={(club: Club) => {
                 setSelectedClub(club);

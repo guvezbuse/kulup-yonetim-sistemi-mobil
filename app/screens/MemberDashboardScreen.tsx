@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { Card } from "../components/Card";
 import { announcementService, AnnouncementItem } from "../services/announcementService";
@@ -48,6 +49,29 @@ export default function MemberDashboardScreen({ userEmail, onBack }: MemberDashb
     loadAnnouncements();
   };
 
+  const handleDeleteAnnouncement = (item: AnnouncementItem) => {
+    Alert.alert(
+      "Duyuruyu Sil",
+      `"${item.baslik}" başlıklı duyuru kalıcı olarak silinecek. Onaylıyor musunuz?`,
+      [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: "Sil",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await announcementService.deleteAnnouncement(item.id);
+              Alert.alert("Başarılı", "Duyuru başarıyla silindi.");
+              loadAnnouncements();
+            } catch (err: any) {
+              Alert.alert("Hata", err.message || "Duyuru silinemedi.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View className="flex-1 bg-slate-900 px-4 pt-4">
       {/* Üst Bar */}
@@ -85,9 +109,14 @@ export default function MemberDashboardScreen({ userEmail, onBack }: MemberDashb
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
             const isSystem = item.kapsam === "sistem";
+
+            // Admin TÜM duyuruları silebilir; normal kullanıcı ise sadece kendi yayınladığını silebilir
+            const canDelete =
+              profile?.is_admin === true || (user?.uid && item.yayinlayan_id === user.uid);
+
             return (
-              <Card className="mb-3 border border-slate-700/60">
-                {/* Rozetler ve Başlık */}
+              <Card className="mb-3 border border-slate-700/60 p-4">
+                {/* Rozetler ve Tarih */}
                 <View className="flex-row justify-between items-center mb-2">
                   <View
                     className={`px-2.5 py-0.5 rounded-full ${
@@ -119,17 +148,29 @@ export default function MemberDashboardScreen({ userEmail, onBack }: MemberDashb
                 <Text className="text-white font-bold text-base mb-1">{item.baslik}</Text>
                 <Text className="text-slate-300 text-xs leading-5 mb-3">{item.icerik}</Text>
 
-                {/* Yayınlayan Bilgisi */}
-                <View className="pt-2 border-t border-slate-800/80 flex-row justify-between items-center">
-                  <Text className="text-slate-400 text-[10px]">
-                    Yayınlayan:{" "}
-                    <Text className="text-slate-300 font-semibold">{item.yayinlayan_ad}</Text>
-                  </Text>
-                  {isSystem && (
-                    <Text className="text-slate-500 text-[9px] italic">
-                      Hedef:{" "}
-                      {item.hedef_kitle === "tum_yoneticiler" ? "Tüm Yöneticiler" : "Tüm Üyeler"}
+                {/* Alt Kısım: Yayınlayan & Sil Butonu */}
+                <View className="pt-2 border-t border-slate-800 flex-row justify-between items-center">
+                  <View className="flex-1 mr-2">
+                    <Text className="text-slate-400 text-[11px]">
+                      Yayınlayan:{" "}
+                      <Text className="text-slate-300 font-semibold">{item.yayinlayan_ad}</Text>
                     </Text>
+                    {isSystem && (
+                      <Text className="text-slate-500 text-[9px] italic mt-0.5">
+                        Hedef:{" "}
+                        {item.hedef_kitle === "tum_yoneticiler" ? "Tüm Yöneticiler" : "Tüm Üyeler"}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Sil Butonu (Admin veya Yayınlayan Kişi) */}
+                  {canDelete && (
+                    <TouchableOpacity
+                      onPress={() => handleDeleteAnnouncement(item)}
+                      className="bg-rose-500/20 border border-rose-500/50 px-3 py-1.5 rounded-lg active:bg-rose-500/40"
+                    >
+                      <Text className="text-rose-400 text-xs font-bold">Sil</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
               </Card>
