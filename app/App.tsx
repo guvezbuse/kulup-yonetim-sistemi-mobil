@@ -10,9 +10,9 @@ import { LoginScreen } from "./screens/LoginScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
 import ClubsScreen from "./screens/ClubsScreen";
-import AdminDashboardScreen from "./screens/AdminDashboardScreen";
+import AdminPanelScreen from "./screens/admin/AdminPanelScreen";
 import MemberDashboardScreen from "./screens/MemberDashboardScreen";
-import ClubManageScreen from "./screens/ClubManageScreen";
+import ClubManageScreen from "./screens/club-manage/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
 import ProfileScreen from "./screens/ProfileScreen";
@@ -115,7 +115,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
-      <StatusBar barStyle="light-content" backgroundColor="#020617" />
+      <StatusBar barStyle="light-content" />
 
       {/* SABİT, TAŞMAYAN ÜST MENÜ */}
       {user && (
@@ -333,7 +333,7 @@ export default function App() {
 
         {currentScreen === "admin-panel" &&
           (isAdmin ? (
-            <AdminDashboardScreen
+            <AdminPanelScreen
               onBack={goBack}
               onManageClub={(club: Club) => {
                 setSelectedClub(club);
