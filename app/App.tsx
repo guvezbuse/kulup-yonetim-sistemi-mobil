@@ -302,11 +302,14 @@ export default function App() {
 
         {currentScreen === "clubs" && (
           <ClubsScreen
-            userEmail={user?.email || undefined}
-            onLogout={handleLogout}
             onSelectClub={(club: Club) => {
               setSelectedClub(club);
               navigateTo("club-detail");
+            }}
+            onCreateClub={() => navigateTo("admin-panel")}
+            onManageClub={(club: Club) => {
+              setSelectedClub(club);
+              navigateTo("manage-club");
             }}
           />
         )}
