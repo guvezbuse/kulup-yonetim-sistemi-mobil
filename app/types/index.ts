@@ -1,3 +1,7 @@
+// ==========================================
+// KULÜP YÖNETİM SİSTEMİ - TİP TANIMLAMALARI
+// ==========================================
+
 // Sistem ve Kulüp Rolleri
 export type SystemRole = "admin" | "user";
 export type ClubRole = "yonetici" | "uye";
@@ -16,9 +20,20 @@ export interface User {
   telefon?: string;
   is_admin: boolean; // Sistem admini bayrağı (kulüpten bağımsız)
   createdAt: string;
+
+  // Arayüz ve profil süreçleri için opsiyonel alanlar:
+  uid?: string;
+  name?: string;
+  surname?: string;
+  role?: SystemRole | string;
+  ogrenciNo?: string;
+  bolum?: string;
+  avatarUrl?: string;
 }
 
-// 2. Kulüp Modeli
+// Geriye dönük uyumluluk için UserProfile takma adı
+export type UserProfile = User;
+
 // 2. Kulüp Modeli
 export interface Club {
   id: string;

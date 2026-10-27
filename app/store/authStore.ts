@@ -9,14 +9,25 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
+import { SystemRole } from "../types";
 
+// Şartname ve ekranlarla %100 uyumlu, çift alan isimlerini destekleyen tam UserProfile arayüzü
 export interface UserProfile {
+  id: string;
   uid: string;
   email: string;
   name?: string;
+  ad?: string;
   surname?: string;
+  soyad?: string;
   phone?: string;
+  telefon?: string;
   is_admin: boolean;
+  role?: SystemRole | string;
+  ogrenciNo?: string;
+  bolum?: string;
+  avatarUrl?: string;
+  createdAt?: any;
 }
 
 interface AuthState {
@@ -52,14 +63,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const userDoc = await getDoc(doc(db, "users", uid));
       if (userDoc.exists()) {
-        const profileData = userDoc.data() as UserProfile;
+        const rawData = userDoc.data();
+        const profileData: UserProfile = {
+          id: uid,
+          uid: uid,
+          email: rawData.email || "",
+          name: rawData.name || rawData.ad || "",
+          ad: rawData.ad || rawData.name || "",
+          surname: rawData.surname || rawData.soyad || "",
+          soyad: rawData.soyad || rawData.surname || "",
+          phone: rawData.phone || rawData.telefon || "",
+          telefon: rawData.telefon || rawData.phone || "",
+          is_admin: Boolean(rawData.is_admin || rawData.role === "admin"),
+          role: rawData.role || (rawData.is_admin ? "admin" : "student"),
+          ogrenciNo: rawData.ogrenciNo || "",
+          bolum: rawData.bolum || "",
+          avatarUrl: rawData.avatarUrl || "",
+          createdAt: rawData.createdAt || null,
+        };
         set({ profile: profileData });
         return profileData;
       } else {
         const fallbackProfile: UserProfile = {
+          id: uid,
           uid,
           email: auth.currentUser?.email || "",
           is_admin: false,
+          role: "student",
         };
         set({ profile: fallbackProfile });
         return fallbackProfile;
@@ -110,12 +140,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const uid = res.user.uid;
 
       const profileData: UserProfile = {
+        id: uid,
         uid,
         email: email.trim(),
         name,
+        ad: name,
         surname,
+        soyad: surname,
         phone,
-        is_admin: false, // Yeni kayıt olan her kullanıcı varsayılan olarak üye statüsündedir
+        telefon: phone,
+        is_admin: false, // Yeni kayıt olan her kullanıcı varsayılan olarak öğrenci statüsündedir
+        role: "student",
       };
 
       await setDoc(doc(db, "users", uid), {

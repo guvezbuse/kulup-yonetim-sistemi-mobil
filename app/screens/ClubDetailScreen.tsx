@@ -35,17 +35,23 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
   const [myRole, setMyRole] = useState<string | null>(null);
   const [motivationMessage, setMotivationMessage] = useState("");
 
+  // Kullanıcı ID'si (Firebase Auth 'uid' veya Firestore Profil 'id/uid')
+  const currentUserId = user?.uid || profile?.uid || profile?.id || "";
+
+  // Sistem Yöneticisi (Admin) Kontrolü — Profil üzerindeki is_admin veya role alanına göre
+  const isSystemAdmin = Boolean(profile?.is_admin) || profile?.role === "admin";
+
   useEffect(() => {
     loadMembership();
   }, [club.id]);
 
   const loadMembership = async () => {
-    if (!user) {
+    if (!currentUserId) {
       setLoading(false);
       return;
     }
     try {
-      const data = await membershipService.getUserMembership(club.id, user.uid);
+      const data = await membershipService.getUserMembership(club.id, currentUserId);
       if (data) {
         setMembershipStatus(data.status);
         setMyRole(data.role);
@@ -61,17 +67,29 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
   };
 
   const handleApply = async () => {
-    if (!user) return;
+    if (!currentUserId) return;
+    if (isSystemAdmin) {
+      Alert.alert("Erişim Kısıtlandı", "Sistem yöneticileri kulüplere üye olamaz.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       // 1. Veritabanına başvuruyu kaydet
-      await membershipService.applyToClub(club.id, user.uid, user.email || "", motivationMessage);
+      await membershipService.applyToClub(
+        club.id,
+        currentUserId,
+        user?.email || profile?.email || "",
+        motivationMessage,
+      );
 
       // 2. Kulüp yöneticilerine bildirim fırlat
       try {
         const applicantName = profile?.name
           ? `${profile.name} ${profile.surname || ""}`.trim()
-          : user.email || "Bir öğrenci";
+          : profile?.ad
+            ? `${profile.ad} ${profile.soyad || ""}`.trim()
+            : user?.email || "Bir öğrenci";
 
         await notificationService.notifyMembershipApplication(club.id, applicantName);
       } catch (pushErr) {
@@ -88,12 +106,8 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
     }
   };
 
-  // Hem standart 'yonetici' hem de 'yönetici' / 'baskan' yazımlarını kontrol eder
-  const isClubManager =
-    myRole === "yonetici" ||
-    (myRole as any) === "yönetici" ||
-    myRole === "baskan" ||
-    (myRole as any) === "başkan";
+  // Kulüp içi yönetici yetkisi kontrolü
+  const isClubManager = myRole === "yonetici" || myRole === "baskan";
 
   // Kulübün Firestore'daki kapak görseli veya varsayılan banner
   const bannerUrl = club.gorselUrl || club.imageUrl || DEFAULT_BANNER;
@@ -128,7 +142,7 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
         ) : (
           <>
             {/* 1. KULÜP YÖNETİCİ KARTI */}
-            {isClubManager && (
+            {isClubManager && !isSystemAdmin && (
               <Card className="mb-4 border border-indigo-500/40 bg-indigo-950/20">
                 <View className="flex-row justify-between items-center">
                   <View className="flex-1 mr-2">
@@ -159,32 +173,49 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
               <Text className="text-white font-bold text-sm mb-3">Kulüp Bilgileri</Text>
               <View className="flex-row justify-between py-2 border-b border-slate-800">
                 <Text className="text-slate-400 text-xs">Durum</Text>
-                <Text className="text-emerald-400 font-bold text-xs">AKTİF</Text>
+                <Text className="text-emerald-400 font-bold text-xs">
+                  {club.durum ? club.durum.toUpperCase() : "AKTİF"}
+                </Text>
               </View>
               <View className="flex-row justify-between py-2 mt-1">
                 <Text className="text-slate-400 text-xs">Üyelik Durumunuz</Text>
                 <Text
                   className={`font-bold text-xs ${
-                    membershipStatus === "aktif"
-                      ? "text-emerald-400"
-                      : membershipStatus === "beklemede"
-                        ? "text-amber-400"
-                        : "text-slate-400"
+                    isSystemAdmin
+                      ? "text-amber-400"
+                      : membershipStatus === "aktif"
+                        ? "text-emerald-400"
+                        : membershipStatus === "beklemede"
+                          ? "text-amber-400"
+                          : "text-slate-400"
                   }`}
                 >
-                  {isClubManager
-                    ? "YÖNETİCİ (AKTİF)"
-                    : membershipStatus === "aktif"
-                      ? "AKTİF ÜYE"
-                      : membershipStatus === "beklemede"
-                        ? "BAŞVURU BEKLEMEDE"
-                        : "ÜYE DEĞİL"}
+                  {isSystemAdmin
+                    ? "SİSTEM YÖNETİCİSİ"
+                    : isClubManager
+                      ? "YÖNETİCİ (AKTİF)"
+                      : membershipStatus === "aktif"
+                        ? "AKTİF ÜYE"
+                        : membershipStatus === "beklemede"
+                          ? "BAŞVURU BEKLEMEDE"
+                          : "ÜYE DEĞİL"}
                 </Text>
               </View>
             </Card>
 
             {/* 4. BAŞVURU VEYA ÜYELİK DURUM KARTLARI */}
-            {membershipStatus === "aktif" ? (
+            {isSystemAdmin ? (
+              <Card className="mb-4 border border-amber-500/30 bg-amber-950/20">
+                <Text className="text-amber-400 font-bold text-sm">
+                  🛡️ Sistem Yöneticisi Hesabı
+                </Text>
+                <Text className="text-slate-300 text-xs mt-1 leading-5">
+                  Sistem yöneticileri genel denetim yetkisine sahip olduklarından kulüplere üye
+                  olamazlar. Kulüp ayarlarını ve yetkilerini Admin Paneli üzerinden
+                  yönetebilirsiniz.
+                </Text>
+              </Card>
+            ) : membershipStatus === "aktif" ? (
               <Card className="mb-4 border border-emerald-500/30 bg-emerald-950/20">
                 <Text className="text-emerald-400 font-bold text-sm">✓ Aktif Kulüp Üyesisiniz</Text>
                 <Text className="text-slate-300 text-xs mt-1">

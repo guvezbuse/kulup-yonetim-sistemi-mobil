@@ -34,7 +34,7 @@ export interface ClubMemberDetail {
 }
 
 export const membershipService = {
-  // 1. Öğrencinin kulübe başvuru yapması (Şartname 4.4)
+  // 1. Öğrencinin kulübe başvuru yapması (Sistem Yöneticisi Engelli)
   applyToClub: async (
     clubId: string,
     userId: string,
@@ -42,7 +42,24 @@ export const membershipService = {
     mesaj: string = "",
     userName: string = "",
   ) => {
-    // Daha önce aktif üyeliği veya bekleyen başvurusu var mı kontrol et
+    // A) Kullanıcı rolünü kontrol et: Sistem Yöneticisi (Admin) ise engelle
+    try {
+      const qUser = query(collection(db, "users"), where("__name__", "==", userId));
+      const userSnap = await getDocs(qUser);
+      if (!userSnap.empty) {
+        const userData = userSnap.docs[0].data();
+        if (userData.role === "admin" || userData.role === "sistem_yoneticisi") {
+          throw new Error("Sistem yöneticileri kulüplere üye olamaz veya başvuru yapamaz.");
+        }
+      }
+    } catch (err: any) {
+      if (err.message?.includes("Sistem yöneticileri")) {
+        throw err;
+      }
+      console.log("Kullanıcı rol kontrolü yapılırken uyarı:", err);
+    }
+
+    // B) Daha önce aktif üyeliği veya bekleyen başvurusu var mı kontrol et
     const qMembers = query(
       collection(db, "memberships"),
       where("club_id", "==", clubId),
@@ -58,7 +75,7 @@ export const membershipService = {
       }
     }
 
-    // JoinRequest kaydı oluştur
+    // C) JoinRequest kaydı oluştur
     await addDoc(collection(db, "join_requests"), {
       club_id: clubId,
       user_id: userId,
@@ -69,7 +86,7 @@ export const membershipService = {
       createdAt: serverTimestamp(),
     });
 
-    // Mükerrer oluşturmamak için: Eğer eski pasif/reddedilmiş kaydı varsa onu güncelle, yoksa yeni aç
+    // D) Mükerrer oluşturmamak için: Eğer eski pasif/reddedilmiş kaydı varsa onu güncelle, yoksa yeni aç
     if (!memberSnap.empty) {
       await updateDoc(doc(db, "memberships", memberSnap.docs[0].id), {
         role: "üye",
@@ -142,7 +159,7 @@ export const membershipService = {
     });
   },
 
-  // 4. Başvuruyu Reddetme (Şartname 4.4)
+  // 4. Başvuruyu Reddetme
   rejectRequest: async (requestId: string, clubId: string, userId: string) => {
     await updateDoc(doc(db, "join_requests", requestId), {
       durum: "reddedildi",
@@ -207,7 +224,6 @@ export const membershipService = {
     for (const memberDoc of memberSnap.docs) {
       const mData = memberDoc.data();
       if (mData.status === "aktif" || mData.status === "pasif") {
-        // Eğer aynı kullanıcıdan veritabanında çift oluşmuşsa pasif/fazla olanı atla
         if (seenUserIds.has(mData.user_id)) {
           continue;
         }
