@@ -22,8 +22,8 @@ export interface UserProfile {
   soyad?: string;
   phone?: string;
   telefon?: string;
-  is_admin: boolean;
-  role?: SystemRole | string;
+  is_admin: boolean; //boolean yetki bayragi
+  role?: SystemRole | string; // sistem rolu ("admin" veya "student")
   ogrenciNo?: string;
   bolum?: string;
   avatarUrl?: string;

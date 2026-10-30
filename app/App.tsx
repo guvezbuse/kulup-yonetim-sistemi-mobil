@@ -306,7 +306,7 @@ export default function App() {
               setSelectedClub(club);
               navigateTo("club-detail");
             }}
-            onCreateClub={() => navigateTo("admin-panel")}
+            onCreateClub={() => navigateTo("manage-club")}
             onManageClub={(club: Club) => {
               setSelectedClub(club);
               navigateTo("manage-club");

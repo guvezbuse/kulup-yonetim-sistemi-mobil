@@ -13,6 +13,7 @@ import { Card } from "../components/Card";
 import { clubService } from "../services/clubService";
 import { useAuthStore } from "../store/authStore";
 import { Club } from "../types";
+import CreateClubModal from "./club-manage/CreateClubModal";
 
 interface ClubsScreenProps {
   onSelectClub: (club: Club) => void;
@@ -34,6 +35,9 @@ export default function ClubsScreen({
   const [filteredClubs, setFilteredClubs] = useState<Club[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Kulüp Oluşturma Modal Durumu
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Sistem Yöneticisi (Admin) Kontrolü
   const isSystemAdmin = Boolean(profile?.is_admin) || profile?.role === "admin";
@@ -79,7 +83,6 @@ export default function ClubsScreen({
           text: "Evet, Değiştir",
           onPress: async () => {
             try {
-              // Doğrudan clubService içindeki orijinal toggleClubStatus fonksiyonu kullanıldı
               await clubService.toggleClubStatus(club.id, club.durum);
               Alert.alert("Başarılı", "Kulüp durumu güncellendi.");
               loadClubs();
@@ -171,9 +174,9 @@ export default function ClubsScreen({
           </Text>
         </View>
 
-        {isSystemAdmin && onCreateClub && (
+        {isSystemAdmin && (
           <TouchableOpacity
-            onPress={onCreateClub}
+            onPress={() => setIsCreateModalOpen(true)}
             className="bg-indigo-600 px-3 py-2 rounded-xl flex-row items-center"
             activeOpacity={0.7}
           >
@@ -186,7 +189,7 @@ export default function ClubsScreen({
       <View className="mb-4">
         <TextInput
           value={searchQuery}
-          onChangeText={searchQuery ? setSearchQuery : setSearchQuery}
+          onChangeText={setSearchQuery}
           placeholder="Kulüp adı veya açıklama ara..."
           placeholderTextColor="#64748b"
           className="bg-slate-800 text-white px-4 py-2.5 rounded-xl border border-slate-700 text-xs"
@@ -212,6 +215,13 @@ export default function ClubsScreen({
           }
         />
       )}
+
+      {/* KULÜP OLUŞTURMA MODALI */}
+      <CreateClubModal
+        visible={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => loadClubs()}
+      />
     </View>
   );
 }
