@@ -67,9 +67,10 @@ export const notificationService = {
     if (!targetUserIds || targetUserIds.length === 0) return;
 
     try {
-      // A. Uygulama içi bildirim geçmişi için Firestore'a yaz (Şartname güvencesi)
       const uniqueUserIds = Array.from(new Set(targetUserIds));
-      for (const uid of uniqueUserIds) {
+
+      // A. Uygulama içi bildirim geçmişi için Firestore'a paralel yaz (Şartname güvencesi)
+      const saveNotificationPromises = uniqueUserIds.map((uid) =>
         addDoc(collection(db, "notifications"), {
           user_id: uid,
           title,
@@ -77,8 +78,9 @@ export const notificationService = {
           data,
           read: false,
           createdAt: serverTimestamp(),
-        }).catch(() => {});
-      }
+        }).catch((err) => console.log(`Bildirim kaydedilemedi (${uid}):`, err)),
+      );
+      await Promise.allSettled(saveNotificationPromises);
 
       // B. Bu kullanıcıların cihaz push tokenlarını bul
       const allUsersSnap = await getDocs(collection(db, "users"));
@@ -118,95 +120,116 @@ export const notificationService = {
   },
 
   // -------------------------------------------------------------
-  // ŞARTNAME 8: ÖZEL DURUMLAR İÇİN TETİKLEYİCİ FONKSİYONLAR
+  // ŞARTNAME: ÖZEL DURUMLAR İÇİN TETİKLEYİCİ FONKSİYONLAR
   // -------------------------------------------------------------
 
   // Kural 1: Duyuru yayınlandığında → hedef kitle
   notifyAnnouncement: async (
-    kapsam: "sistem" | "kulup",
-    hedefKitle: string,
-    clubId: string | null,
+    kapsam: "sistem" | "kulup" | string,
+    hedefKitle: "tum_uyeler" | "tum_yoneticiler" | string,
+    clubId: string | null | undefined,
     title: string,
     content: string,
   ) => {
-    const userIds: string[] = [];
-    if (kapsam === "kulup" && clubId) {
-      const snap = await getDocs(
-        query(
-          collection(db, "memberships"),
-          where("club_id", "==", clubId),
-          where("status", "==", "aktif"),
-        ),
-      );
-      snap.forEach((d) => userIds.push(d.data().user_id));
-    } else {
-      if (hedefKitle === "tum_uyeler") {
-        const snap = await getDocs(collection(db, "users"));
-        snap.forEach((d) => userIds.push(d.id));
-      } else if (hedefKitle === "tum_yoneticiler") {
+    try {
+      const userIds: string[] = [];
+      if (kapsam === "kulup" && clubId) {
         const snap = await getDocs(
-          query(collection(db, "memberships"), where("status", "==", "aktif")),
+          query(
+            collection(db, "memberships"),
+            where("club_id", "==", clubId),
+            where("status", "==", "aktif"),
+          ),
         );
-        snap.forEach((d) => {
-          const role = (d.data().role || "").toLowerCase();
-          if (role === "yonetici" || role === "yönetici" || role === "baskan")
-            userIds.push(d.data().user_id);
-        });
+        snap.forEach((d) => userIds.push(d.data().user_id));
+      } else {
+        if (hedefKitle === "tum_uyeler" || hedefKitle === "hepsi") {
+          const snap = await getDocs(collection(db, "users"));
+          snap.forEach((d) => userIds.push(d.id));
+        } else if (hedefKitle === "tum_yoneticiler") {
+          const snap = await getDocs(
+            query(collection(db, "memberships"), where("status", "==", "aktif")),
+          );
+          snap.forEach((d) => {
+            const role = (d.data().role || "").toLowerCase();
+            if (
+              role === "yonetici" ||
+              role === "yönetici" ||
+              role === "baskan" ||
+              role === "başkan"
+            )
+              userIds.push(d.data().user_id);
+          });
+        }
       }
+      await notificationService.sendPush(userIds, `📢 ${title}`, content);
+    } catch (err) {
+      console.log("notifyAnnouncement hatası:", err);
     }
-    await notificationService.sendPush(userIds, `📢 ${title}`, content);
   },
 
   // Kural 2: Etkinlik yayınlandığında → kulüp üyeleri (veya üniversite geneli)
-  notifyEventPublished: async (clubId: string | null, eventTitle: string, eventDate: string) => {
-    const userIds: string[] = [];
-    if (clubId) {
-      const snap = await getDocs(
-        query(
-          collection(db, "memberships"),
-          where("club_id", "==", clubId),
-          where("status", "==", "aktif"),
-        ),
-      );
-      snap.forEach((d) => userIds.push(d.data().user_id));
-      await notificationService.sendPush(
-        userIds,
-        "🎉 Yeni Kulüp Etkinliği!",
-        `${eventTitle} etkinliği yayınlandı. Tarih: ${eventDate}`,
-      );
-    } else {
-      // Üniversite geneli etkinlik
-      const snap = await getDocs(collection(db, "users"));
-      snap.forEach((d) => userIds.push(d.id));
-      await notificationService.sendPush(
-        userIds,
-        "🏛️ Üniversite Geneli Etkinlik!",
-        `${eventTitle} tüm öğrencilere açıldı.`,
-      );
+  notifyEventPublished: async (
+    clubId: string | null | undefined,
+    eventTitle: string,
+    eventDate: string,
+  ) => {
+    try {
+      const userIds: string[] = [];
+      if (clubId) {
+        const snap = await getDocs(
+          query(
+            collection(db, "memberships"),
+            where("club_id", "==", clubId),
+            where("status", "==", "aktif"),
+          ),
+        );
+        snap.forEach((d) => userIds.push(d.data().user_id));
+        await notificationService.sendPush(
+          userIds,
+          "🎉 Yeni Kulüp Etkinliği!",
+          `${eventTitle} etkinliği yayınlandı. Tarih: ${eventDate}`,
+        );
+      } else {
+        // Üniversite geneli etkinlik
+        const snap = await getDocs(collection(db, "users"));
+        snap.forEach((d) => userIds.push(d.id));
+        await notificationService.sendPush(
+          userIds,
+          "🏛️ Üniversite Geneli Etkinlik!",
+          `${eventTitle} tüm öğrencilere açıldı.`,
+        );
+      }
+    } catch (err) {
+      console.log("notifyEventPublished hatası:", err);
     }
   },
 
   // Kural 3: Üyelik başvurusu geldiğinde → ilgili kulübün yöneticileri
   notifyMembershipApplication: async (clubId: string, applicantName: string) => {
-    const managerIds: string[] = [];
-    const snap = await getDocs(
-      query(
-        collection(db, "memberships"),
-        where("club_id", "==", clubId),
-        where("status", "==", "aktif"),
-      ),
-    );
-    snap.forEach((d) => {
-      const role = (d.data().role || "").toLowerCase();
-      if (role === "yonetici" || role === "yönetici" || role === "baskan") {
-        managerIds.push(d.data().user_id);
-      }
-    });
-    await notificationService.sendPush(
-      managerIds,
-      "📥 Yeni Üyelik Başvurusu",
-      `${applicantName} kulübünüze katılmak için başvurdu.`,
-    );
+    try {
+      const managerIds: string[] = [];
+      const snap = await getDocs(
+        query(
+          collection(db, "memberships"),
+          where("club_id", "==", clubId),
+          where("status", "==", "aktif"),
+        ),
+      );
+      snap.forEach((d) => {
+        const role = (d.data().role || "").toLowerCase();
+        if (role === "yonetici" || role === "yönetici" || role === "baskan" || role === "başkan") {
+          managerIds.push(d.data().user_id);
+        }
+      });
+      await notificationService.sendPush(
+        managerIds,
+        "📥 Yeni Üyelik Başvurusu",
+        `${applicantName} kulübünüze katılmak için başvurdu.`,
+      );
+    } catch (err) {
+      console.log("notifyMembershipApplication hatası:", err);
+    }
   },
 
   // Kural 4: Başvuru onaylandı/reddedildiğinde → başvuru sahibi
@@ -215,20 +238,28 @@ export const notificationService = {
     clubName: string,
     status: "onaylandi" | "reddedildi",
   ) => {
-    const title = status === "onaylandi" ? "🎉 Başvurunuz Onaylandı!" : "ℹ️ Başvuru Durumu";
-    const body =
-      status === "onaylandi"
-        ? `Tebrikler! ${clubName} kulübüne üyelik başvurunuz onaylandı.`
-        : `${clubName} kulübüne yaptığınız üyelik başvurusu reddedildi.`;
-    await notificationService.sendPush([targetUserId], title, body);
+    try {
+      const title = status === "onaylandi" ? "🎉 Başvurunuz Onaylandı!" : "ℹ️ Başvuru Durumu";
+      const body =
+        status === "onaylandi"
+          ? `Tebrikler! ${clubName} kulübüne üyelik başvurunuz onaylandı.`
+          : `${clubName} kulübüne yaptığınız üyelik başvurusu reddedildi.`;
+      await notificationService.sendPush([targetUserId], title, body);
+    } catch (err) {
+      console.log("notifyApplicationDecision hatası:", err);
+    }
   },
 
   // Kural 5: Yöneticilik/üyelik daveti geldiğinde → davet edilen kişi
   notifyRoleInvitation: async (targetUserId: string, clubName: string, role: string) => {
-    await notificationService.sendPush(
-      [targetUserId],
-      "✉️ Yeni Rol / Davet",
-      `${clubName} kulübünde size '${role}' yetkisi tanımlandı.`,
-    );
+    try {
+      await notificationService.sendPush(
+        [targetUserId],
+        "✉️ Yeni Rol / Davet",
+        `${clubName} kulübünde size '${role}' yetkisi tanımlandı.`,
+      );
+    } catch (err) {
+      console.log("notifyRoleInvitation hatası:", err);
+    }
   },
 };

@@ -5,6 +5,7 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
+  updateDoc,
   doc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -12,7 +13,8 @@ import { db } from "../lib/firebase";
 import { notificationService } from "./notificationService";
 
 export type AnnouncementScope = "sistem" | "kulup";
-export type AnnouncementTarget = "tum_yoneticiler" | "tum_uyeler" | "kulup_uyeleri";
+export type AnnouncementTarget =
+  "tum_yoneticiler" | "tum_uyeler" | "kulup_uyeleri" | "tum_adminler";
 
 export interface AnnouncementItem {
   id: string;
@@ -28,13 +30,13 @@ export interface AnnouncementItem {
 }
 
 export const announcementService = {
-  // 1. Sistem Geneli Duyuru Oluşturma (Yalnızca Admin - Şartname 2.1 & 5)
+  // 1. Sistem Geneli Duyuru Oluşturma (Admin)
   createSystemAnnouncement: async (
     baslik: string,
     icerik: string,
     adminId: string,
     adminName: string,
-    hedefKitle: "tum_yoneticiler" | "tum_uyeler",
+    hedefKitle: "tum_yoneticiler" | "tum_uyeler" | "tum_adminler",
   ) => {
     if (!baslik.trim() || !icerik.trim()) {
       throw new Error("Başlık ve içerik boş bırakılamaz.");
@@ -53,14 +55,13 @@ export const announcementService = {
       createdAt: serverTimestamp(),
     });
 
-    // Push Bildirimi Gönder (Hedef kitleye göre)
     try {
-      const tokens = await notificationService.getTokensForAudience("sistem", hedefKitle);
-      await notificationService.sendPushNotification(
-        tokens,
-        "Yeni Sistem Duyurusu",
+      await notificationService.notifyAnnouncement(
+        "sistem",
+        hedefKitle,
+        null,
         baslik.trim(),
-        { announcementId: docRef.id, type: "system_announcement" },
+        icerik.trim(),
       );
     } catch (pushErr) {
       console.log("Sistem duyurusu push bildirimi gönderilemedi:", pushErr);
@@ -69,7 +70,7 @@ export const announcementService = {
     return docRef.id;
   },
 
-  // 2. Kulüp Duyurusu Oluşturma (Kulüp Yöneticisi - Şartname 2.2 & 5)
+  // 2. Kulüp Duyurusu Oluşturma
   createClubAnnouncement: async (
     clubId: string,
     clubName: string,
@@ -95,18 +96,13 @@ export const announcementService = {
       createdAt: serverTimestamp(),
     });
 
-    // Push Bildirimi Gönder (Kulübün aktif üyelerine)
     try {
-      const tokens = await notificationService.getTokensForAudience(
+      await notificationService.notifyAnnouncement(
         "kulup",
         "kulup_uyeleri",
         clubId,
-      );
-      await notificationService.sendPushNotification(
-        tokens,
-        `${clubName} - Yeni Duyuru`,
         baslik.trim(),
-        { announcementId: docRef.id, clubId, type: "club_announcement" },
+        icerik.trim(),
       );
     } catch (pushErr) {
       console.log("Kulüp duyurusu push bildirimi gönderilemedi:", pushErr);
@@ -115,7 +111,7 @@ export const announcementService = {
     return docRef.id;
   },
 
-  // 3. Kullanıcıya Özel Duyuru Akışını Getirme (Şartname 5 & 10)
+  // 3. Kullanıcıya Özel Duyuru Akışını Getirme
   getAnnouncementsForUser: async (
     userId: string,
     isSuperAdmin: boolean = false,
@@ -145,12 +141,10 @@ export const announcementService = {
         };
       });
 
-      // Sistem Yöneticisi ise tüm duyuruları doğrudan göster
       if (isSuperAdmin) {
         return all.sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime());
       }
 
-      // Kullanıcının aktif üyeliklerini ve yönetici olduğu kulüpleri çek
       const mQuery = query(
         collection(db, "memberships"),
         where("user_id", "==", userId),
@@ -172,16 +166,14 @@ export const announcementService = {
         }
       });
 
-      // Kullanıcıya uygun duyuruları filtrele
       const filtered = all.filter((item) => {
-        // 1. Sistem Duyuruları
         if (item.kapsam === "sistem") {
           if (item.hedef_kitle === "tum_uyeler") return true;
           if (item.hedef_kitle === "tum_yoneticiler" && isManagerInAnyClub) return true;
+          if (item.hedef_kitle === "tum_adminler" && isSuperAdmin) return true;
           return false;
         }
 
-        // 2. Kulüp Duyuruları: Yalnızca kullanıcının aktif üye veya yönetici olduğu kulüpler
         if (item.kapsam === "kulup" && item.club_id) {
           return activeClubIds.includes(item.club_id);
         }
@@ -196,7 +188,20 @@ export const announcementService = {
     }
   },
 
-  // 4. Duyuru Silme (Şartname 5)
+  // 4. Duyuru Güncelleme
+  updateAnnouncement: async (announcementId: string, baslik: string, icerik: string) => {
+    if (!baslik.trim() || !icerik.trim()) {
+      throw new Error("Başlık ve içerik boş bırakılamaz.");
+    }
+
+    await updateDoc(doc(db, "announcements", announcementId), {
+      baslik: baslik.trim(),
+      icerik: icerik.trim(),
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  // 5. Duyuru Silme
   deleteAnnouncement: async (announcementId: string) => {
     await deleteDoc(doc(db, "announcements", announcementId));
   },

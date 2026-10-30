@@ -3,25 +3,21 @@ import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Card } from "../../components/Card";
 import { Club } from "../../types";
 
-// Alt Ekranlar
-import CreateAnnouncementScreen from "./CreateAnnouncementScreen";
+import CreateAnnouncementModal from "./CreateAnnouncementModal";
 import CreateEventScreen from "./CreateEventScreen";
 import ManageClubsScreen from "./ManageClubsScreen";
-import ManageUsersScreen from "./ManageUsersScreen"; // <-- YENİ EKLENDİ
+import ManageUsersScreen from "./ManageUsersScreen";
 
 interface AdminPanelScreenProps {
   onBack: () => void;
   onManageClub: (club: Club) => void;
 }
 
-type ActiveTab = "menu" | "announcements" | "events" | "clubs" | "users"; // <-- "users" eklendi
+type ActiveTab = "menu" | "events" | "clubs" | "users";
 
 export default function AdminPanelScreen({ onBack, onManageClub }: AdminPanelScreenProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("menu");
-
-  if (activeTab === "announcements") {
-    return <CreateAnnouncementScreen onBack={() => setActiveTab("menu")} />;
-  }
+  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
 
   if (activeTab === "events") {
     return <CreateEventScreen onBack={() => setActiveTab("menu")} />;
@@ -32,12 +28,11 @@ export default function AdminPanelScreen({ onBack, onManageClub }: AdminPanelScr
   }
 
   if (activeTab === "users") {
-    return <ManageUsersScreen onBack={() => setActiveTab("menu")} />; // <-- YENİ EKLENDİ
+    return <ManageUsersScreen onBack={() => setActiveTab("menu")} />;
   }
 
   return (
     <ScrollView className="flex-1 bg-slate-900 px-4 pt-4" showsVerticalScrollIndicator={false}>
-      {/* Üst Bar */}
       <View className="flex-row justify-between items-center mb-6">
         <TouchableOpacity onPress={onBack}>
           <Text className="text-indigo-400 font-semibold">← Ana Sayfaya Dön</Text>
@@ -50,10 +45,8 @@ export default function AdminPanelScreen({ onBack, onManageClub }: AdminPanelScr
         Yapmak istediğiniz işlemi aşağıdaki kategorilerden seçebilirsiniz.
       </Text>
 
-      {/* MENÜ BUTONLARI */}
-
       {/* 1. Sistem Duyuruları */}
-      <TouchableOpacity onPress={() => setActiveTab("announcements")}>
+      <TouchableOpacity onPress={() => setIsAnnouncementModalOpen(true)}>
         <Card className="mb-4 border border-amber-500/30 flex-row items-center justify-between p-4">
           <View className="flex-row items-center flex-1 mr-2">
             <Text className="text-2xl mr-3">📢</Text>
@@ -100,7 +93,7 @@ export default function AdminPanelScreen({ onBack, onManageClub }: AdminPanelScr
         </Card>
       </TouchableOpacity>
 
-      {/* 4. Kullanıcı / Üye Yönetimi (YENİ BUTON) */}
+      {/* 4. Kullanıcı Yönetimi */}
       <TouchableOpacity onPress={() => setActiveTab("users")}>
         <Card className="mb-6 border border-emerald-500/40 flex-row items-center justify-between p-4">
           <View className="flex-row items-center flex-1 mr-2">
@@ -115,6 +108,11 @@ export default function AdminPanelScreen({ onBack, onManageClub }: AdminPanelScr
           <Text className="text-slate-400 text-lg font-bold">→</Text>
         </Card>
       </TouchableOpacity>
+
+      <CreateAnnouncementModal
+        visible={isAnnouncementModalOpen}
+        onClose={() => setIsAnnouncementModalOpen(false)}
+      />
 
       <View className="h-10" />
     </ScrollView>

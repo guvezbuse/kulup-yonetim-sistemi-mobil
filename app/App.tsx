@@ -11,7 +11,6 @@ import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
 import ClubsScreen from "./screens/ClubsScreen";
 import AdminPanelScreen from "./screens/admin/AdminPanelScreen";
-import MemberDashboardScreen from "./screens/MemberDashboardScreen";
 import ClubManageScreen from "./screens/club-manage/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
@@ -306,7 +305,6 @@ export default function App() {
               setSelectedClub(club);
               navigateTo("club-detail");
             }}
-            onCreateClub={() => navigateTo("manage-club")}
             onManageClub={(club: Club) => {
               setSelectedClub(club);
               navigateTo("manage-club");
@@ -314,13 +312,12 @@ export default function App() {
           />
         )}
 
-        {currentScreen === "announcements" && (
-          <MemberDashboardScreen userEmail={user?.email || undefined} onBack={goBack} />
+        {/* Duyurular menüsüne tıklandığında doğrudan NotificationsScreen çağrılır */}
+        {(currentScreen === "announcements" || currentScreen === "notifications") && (
+          <NotificationsScreen onBack={goBack} />
         )}
 
         {currentScreen === "events" && <EventsScreen />}
-
-        {currentScreen === "notifications" && <NotificationsScreen onBack={goBack} />}
 
         {currentScreen === "club-detail" && selectedClub && (
           <ClubDetailScreen
