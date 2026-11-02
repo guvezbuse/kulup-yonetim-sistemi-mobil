@@ -1,260 +1,206 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
+  ScrollView,
   Alert,
   ActivityIndicator,
-  ScrollView,
-  Modal,
 } from "react-native";
-import { Card } from "../../components/Card";
-import { Input } from "../../components/Input";
-import { eventService, EventItem, EventStatus } from "../../services/eventService";
+import { createEvent } from "../../services/eventService";
 import { useAuthStore } from "../../store/authStore";
+import { Timestamp } from "firebase/firestore";
 
-interface Props {
-  onBack: () => void;
+interface CreateEventScreenProps {
+  onBack?: () => void;
+  navigation?: any;
 }
 
-export default function CreateEventScreen({ onBack }: Props) {
-  const user = useAuthStore((state) => state.user);
+export default function CreateEventScreen({ onBack, navigation }: CreateEventScreenProps) {
+  const { user } = useAuthStore();
 
-  const [adminEvents, setAdminEvents] = useState<EventItem[]>([]);
-  const [eventTitle, setEventTitle] = useState("");
-  const [eventDesc, setEventDesc] = useState("");
-  const [eventDateTime, setEventDateTime] = useState("");
-  const [eventLocation, setEventLocation] = useState("");
-  const [eventQuota, setEventQuota] = useState("");
-  const [eventCreating, setEventCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
+  const [dateInput, setDateInput] = useState("");
+  const [quota, setQuota] = useState("");
+  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all");
+  const [loading, setLoading] = useState(false);
 
-  const [selectedEventApps, setSelectedEventApps] = useState<any[]>([]);
-  const [appModalVisible, setAppModalVisible] = useState(false);
-  const [selectedEventTitle, setSelectedEventTitle] = useState("");
-  const [loadingApps, setLoadingApps] = useState(false);
-
-  const loadEvents = async () => {
-    try {
-      const allEvents = await eventService.getPublishedEventsForUser(user?.uid || "", true);
-      const generalEvents = allEvents.filter((ev) => ev.club_id === null);
-      setAdminEvents(generalEvents);
-    } catch (err) {
-      console.log("Etkinlikler çekilemedi:", err);
+  const handleGoBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (navigation?.goBack) {
+      navigation.goBack();
     }
   };
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
+  const convertToDateObject = (input: string): Date | null => {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
 
-  const handleCreateGeneralEvent = async (asDraft: boolean = false) => {
-    if (!eventTitle.trim() || !eventDesc.trim() || !eventLocation.trim() || !eventDateTime.trim()) {
+    let d = new Date(trimmed.replace(" ", "T"));
+    if (!isNaN(d.getTime())) return d;
+
+    const parts = trimmed.split(/[\s.:/-]+/);
+    if (parts.length >= 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      const hour = parts[3] ? parseInt(parts[3], 10) : 0;
+      const minute = parts[4] ? parseInt(parts[4], 10) : 0;
+
+      d = new Date(year, month, day, hour, minute);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    return null;
+  };
+
+  const handleCreate = async () => {
+    if (!title.trim() || !description.trim() || !location.trim() || !dateInput.trim()) {
+      Alert.alert("Hata", "Lütfen tüm zorunlu alanları doldurun.");
+      return;
+    }
+
+    const eventDateObj = convertToDateObject(dateInput);
+    if (!eventDateObj) {
       Alert.alert(
-        "Hata",
-        "Lütfen etkinlik adı, tarih/saat, konum ve açıklama alanlarını doldurun.",
+        "Hatalı Tarih Biçimi",
+        "Lütfen tarihi aşağıdaki biçimlerden birinde girin:\n\n• 2026-11-15 14:30\n• 15.11.2026 14:30",
       );
       return;
     }
 
-    setEventCreating(true);
     try {
-      await eventService.createEvent({
-        club_id: null,
-        club_ad: "Üniversite Geneli",
-        baslik: eventTitle,
-        aciklama: eventDesc,
-        tarih_saat: eventDateTime,
-        konum: eventLocation,
-        kontenjan: eventQuota ? parseInt(eventQuota, 10) : null,
-        olusturan_id: user?.uid || "admin",
-        durum: asDraft ? "taslak" : "yayinlandi",
-      });
+      setLoading(true);
 
-      Alert.alert(
-        "Başarılı 🎉",
-        asDraft
-          ? "Genel etkinlik taslak kaydedildi."
-          : "Genel etkinlik tüm öğrencilere yayınlandı!",
-      );
-      setEventTitle("");
-      setEventDesc("");
-      setEventDateTime("");
-      setEventLocation("");
-      setEventQuota("");
-      loadEvents();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Etkinlik oluşturulamadı.");
+      const eventPayload: Record<string, any> = {
+        title: title.trim(),
+        name: title.trim(),
+        baslik: title.trim(),
+        description: description.trim(),
+        aciklama: description.trim(),
+        location: location.trim(),
+        konum: location.trim(),
+        // String DEĞİL, Kesin Firestore Timestamp!
+        eventDate: Timestamp.fromDate(eventDateObj),
+        date: Timestamp.fromDate(eventDateObj),
+        tarih: Timestamp.fromDate(eventDateObj),
+        targetAudience,
+        createdBy: user?.uid || "admin",
+        createdAt: Timestamp.now(),
+        participants: [],
+        attendees: [],
+      };
+
+      if (quota.trim()) {
+        eventPayload.quota = parseInt(quota, 10);
+        eventPayload.kontenjan = parseInt(quota, 10);
+      }
+
+      await createEvent(eventPayload);
+      Alert.alert("Başarılı", "Etkinlik başarıyla oluşturuldu.");
+      handleGoBack();
+    } catch (error) {
+      console.error("Etkinlik oluşturma hatası:", error);
+      Alert.alert("Hata", "Etkinlik oluşturulurken bir sorun oluştu.");
     } finally {
-      setEventCreating(false);
-    }
-  };
-
-  const handleUpdateEventStatus = async (eventId: string, status: EventStatus) => {
-    try {
-      await eventService.updateEventStatus(eventId, status);
-      loadEvents();
-    } catch (err: any) {
-      Alert.alert("Hata", "Durum güncellenemedi.");
-    }
-  };
-
-  const handleDeleteEvent = (eventId: string, title: string) => {
-    Alert.alert("Etkinliği Sil", `"${title}" kalıcı olarak silinecek. Emin misiniz?`, [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await eventService.deleteEvent(eventId);
-            loadEvents();
-          } catch (e) {
-            Alert.alert("Hata", "Etkinlik silinemedi.");
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleViewApplications = async (eventId: string, title: string) => {
-    setSelectedEventTitle(title);
-    setLoadingApps(true);
-    setAppModalVisible(true);
-    try {
-      const data = await eventService.getEventApplications(eventId);
-      setSelectedEventApps(data);
-    } catch (e) {
-      Alert.alert("Hata", "Başvurular çekilemedi.");
-    } finally {
-      setLoadingApps(false);
+      setLoading(false);
     }
   };
 
   return (
-    <ScrollView className="flex-1 bg-slate-900 px-4 pt-4" showsVerticalScrollIndicator={false}>
-      <TouchableOpacity onPress={onBack} className="mb-4">
-        <Text className="text-indigo-400 font-semibold">← Menüye Dön</Text>
+    <ScrollView className="flex-1 bg-slate-900 p-4" showsVerticalScrollIndicator={false}>
+      <TouchableOpacity onPress={handleGoBack} className="mb-4">
+        <Text className="text-indigo-400 font-semibold">← Geri Dön</Text>
       </TouchableOpacity>
 
-      <Text className="text-2xl font-bold text-white mb-4">🏛️ Genel Etkinlik Yönetimi</Text>
+      <Text className="text-2xl font-bold text-white mb-6">Yeni Etkinlik Oluştur</Text>
 
-      <Card className="mb-6 border border-purple-500/40">
-        <Input
-          label="Etkinlik Başlığı"
-          placeholder="Örn: Kariyer Fuarı 2026"
-          value={eventTitle}
-          onChangeText={setEventTitle}
-        />
-        <Input
-          label="Tarih ve Saat"
-          placeholder="Örn: 20 Kasım 2026 - 10:00"
-          value={eventDateTime}
-          onChangeText={setEventDateTime}
-        />
-        <Input
-          label="Konum / Alan"
-          placeholder="Örn: Kongre ve Kültür Merkezi"
-          value={eventLocation}
-          onChangeText={setEventLocation}
-        />
-        <Input
-          label="Kontenjan (Opsiyonel)"
-          placeholder="Limitsiz için boş bırakın"
-          keyboardType="numeric"
-          value={eventQuota}
-          onChangeText={setEventQuota}
-        />
-        <Input
-          label="Açıklama"
-          placeholder="Etkinlik programı, konuşmacılar..."
-          value={eventDesc}
-          onChangeText={setEventDesc}
-          multiline
-        />
-
-        <View className="flex-row gap-2 mt-2">
+      <Text className="text-slate-300 font-semibold mb-2">Hedef Kitle</Text>
+      <View className="flex-row gap-2 mb-4">
+        {[
+          { label: "Üniversite Geneli", value: "all" },
+          { label: "Adminler", value: "admin" },
+          { label: "Kulüp Yöneticileri", value: "club_manager" },
+        ].map((item) => (
           <TouchableOpacity
-            onPress={() => handleCreateGeneralEvent(true)}
-            disabled={eventCreating}
-            className="flex-1 bg-slate-800 border border-slate-700 py-3 rounded-xl items-center"
+            key={item.value}
+            onPress={() => setTargetAudience(item.value as any)}
+            className={`flex-1 p-3 rounded-lg border ${
+              targetAudience === item.value
+                ? "bg-indigo-600 border-indigo-500"
+                : "bg-slate-800 border-slate-700"
+            }`}
           >
-            <Text className="text-slate-300 font-bold text-xs">Taslak Kaydet</Text>
+            <Text className="text-white text-xs font-semibold text-center">{item.label}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleCreateGeneralEvent(false)}
-            disabled={eventCreating}
-            className="flex-1 bg-purple-600 py-3 rounded-xl items-center"
-          >
-            {eventCreating ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text className="text-white font-bold text-xs">Yayınla</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </Card>
+        ))}
+      </View>
 
-      <Text className="text-base font-bold text-white mb-2">
-        Yayınlanan Etkinlikler ({adminEvents.length})
+      <Text className="text-slate-300 font-semibold mb-1">Etkinlik Başlığı *</Text>
+      <TextInput
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Etkinlik adını girin"
+        placeholderTextColor="#64748b"
+        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
+      />
+
+      <Text className="text-slate-300 font-semibold mb-1">Açıklama *</Text>
+      <TextInput
+        value={description}
+        onChangeText={setDescription}
+        multiline
+        numberOfLines={4}
+        placeholder="Etkinlik detaylarını girin"
+        placeholderTextColor="#64748b"
+        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700 h-24"
+      />
+
+      <Text className="text-slate-300 font-semibold mb-1">Konum / Mekan *</Text>
+      <TextInput
+        value={location}
+        onChangeText={setLocation}
+        placeholder="Örn: Kongre Merkezi Salon A"
+        placeholderTextColor="#64748b"
+        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
+      />
+
+      <Text className="text-slate-300 font-semibold mb-1">
+        Tarih ve Saat * (Örn: 2026-11-15 14:30 veya 15.11.2026 14:30)
       </Text>
-      {adminEvents.map((ev) => (
-        <View key={ev.id} className="bg-slate-800 p-3.5 rounded-xl mb-3 border border-slate-700">
-          <View className="flex-row justify-between items-start mb-1.5">
-            <Text className="text-white font-bold text-sm flex-1 mr-2">{ev.baslik}</Text>
-            <Text className="text-purple-400 text-[10px] font-bold uppercase">{ev.durum}</Text>
-          </View>
-          <Text className="text-slate-400 text-xs mb-2">{ev.aciklama}</Text>
-          <View className="flex-row gap-2 justify-end pt-1">
-            <TouchableOpacity
-              onPress={() => handleViewApplications(ev.id, ev.baslik)}
-              className="bg-indigo-600/80 px-2.5 py-1.5 rounded-lg mr-auto"
-            >
-              <Text className="text-white text-[10px] font-bold">📋 Başvurular</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleDeleteEvent(ev.id, ev.baslik)}
-              className="bg-rose-950/60 border border-rose-600/60 px-2 py-1.5 rounded-lg"
-            >
-              <Text className="text-rose-400 text-[10px] font-bold">Sil</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
+      <TextInput
+        value={dateInput}
+        onChangeText={setDateInput}
+        placeholder="2026-11-15 14:30"
+        placeholderTextColor="#64748b"
+        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
+      />
 
-      <Modal visible={appModalVisible} transparent animationType="fade">
-        <View className="flex-1 bg-black/75 justify-center px-4">
-          <View className="bg-slate-800 p-5 rounded-2xl border border-slate-700 max-h-[80%]">
-            <View className="flex-row justify-between items-center mb-3">
-              <Text className="text-white font-bold text-sm">{selectedEventTitle}</Text>
-              <TouchableOpacity
-                onPress={() => setAppModalVisible(false)}
-                className="bg-slate-700 p-1.5 rounded-full"
-              >
-                <Text className="text-slate-300 font-bold text-xs">✕</Text>
-              </TouchableOpacity>
-            </View>
-            {loadingApps ? (
-              <ActivityIndicator color="#a855f7" className="py-6" />
-            ) : selectedEventApps.length === 0 ? (
-              <Text className="text-slate-400 text-xs text-center py-6">Başvuru yok.</Text>
-            ) : (
-              <ScrollView>
-                {selectedEventApps.map((app, index) => (
-                  <View
-                    key={app.id}
-                    className="bg-slate-900 p-3 rounded-xl mb-2 border border-slate-700"
-                  >
-                    <Text className="text-white font-bold text-xs">
-                      #{index + 1} {app.user_name}
-                    </Text>
-                    <Text className="text-slate-400 text-[10px]">{app.user_email}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
+      <Text className="text-slate-300 font-semibold mb-1">Kontenjan (Opsiyonel)</Text>
+      <TextInput
+        value={quota}
+        onChangeText={setQuota}
+        keyboardType="numeric"
+        placeholder="Sınırsız için boş bırakın"
+        placeholderTextColor="#64748b"
+        className="bg-slate-800 text-white p-3 rounded-lg mb-6 border border-slate-700"
+      />
+
+      <TouchableOpacity
+        onPress={handleCreate}
+        disabled={loading}
+        className="bg-indigo-600 p-4 rounded-xl items-center mb-10"
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text className="text-white font-bold text-base">Etkinliği Yayınla</Text>
+        )}
+      </TouchableOpacity>
     </ScrollView>
   );
 }

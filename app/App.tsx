@@ -10,7 +10,7 @@ import { LoginScreen } from "./screens/LoginScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
 import ClubsScreen from "./screens/ClubsScreen";
-import AdminPanelScreen from "./screens/admin/AdminPanelScreen";
+import CreateEventScreen from "./screens/admin/CreateEventScreen";
 import ClubManageScreen from "./screens/club-manage/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
@@ -32,8 +32,8 @@ type ScreenType =
   | "clubs"
   | "announcements"
   | "events"
+  | "create-event"
   | "notifications"
-  | "admin-panel"
   | "manage-club"
   | "club-detail";
 
@@ -199,9 +199,15 @@ export default function App() {
               marginHorizontal: 2,
               paddingVertical: 7,
               borderRadius: 8,
-              backgroundColor: currentScreen === "events" ? "#7c3aed" : "#0f172a",
+              backgroundColor:
+                currentScreen === "events" || currentScreen === "create-event"
+                  ? "#7c3aed"
+                  : "#0f172a",
               borderWidth: 1,
-              borderColor: currentScreen === "events" ? "#8b5cf6" : "#1e293b",
+              borderColor:
+                currentScreen === "events" || currentScreen === "create-event"
+                  ? "#8b5cf6"
+                  : "#1e293b",
               alignItems: "center",
             }}
           >
@@ -226,26 +232,7 @@ export default function App() {
             <Text style={{ fontSize: 14 }}>🔔</Text>
           </TouchableOpacity>
 
-          {/* 6. Admin Paneli */}
-          {isAdmin && (
-            <TouchableOpacity
-              onPress={() => navigateTo("admin-panel")}
-              style={{
-                marginHorizontal: 2,
-                paddingVertical: 7,
-                paddingHorizontal: 7,
-                borderRadius: 8,
-                backgroundColor: currentScreen === "admin-panel" ? "#d97706" : "#78350f",
-                borderWidth: 1,
-                borderColor: "#f59e0b",
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#fbbf24", fontSize: 10.5, fontWeight: "700" }}>Admin</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* 7. Çıkış */}
+          {/* 6. Çıkış */}
           <TouchableOpacity
             onPress={handleLogout}
             style={{
@@ -317,7 +304,25 @@ export default function App() {
           <NotificationsScreen onBack={goBack} />
         )}
 
-        {currentScreen === "events" && <EventsScreen />}
+        {currentScreen === "events" && (
+          <EventsScreen
+            navigation={{
+              navigate: (screen: string) => {
+                if (screen === "CreateEvent") {
+                  navigateTo("create-event");
+                }
+              },
+            }}
+          />
+        )}
+
+        {currentScreen === "create-event" && (
+          <CreateEventScreen
+            navigation={{
+              goBack: goBack,
+            }}
+          />
+        )}
 
         {currentScreen === "club-detail" && selectedClub && (
           <ClubDetailScreen
@@ -330,27 +335,6 @@ export default function App() {
         {currentScreen === "manage-club" && selectedClub && (
           <ClubManageScreen clubId={selectedClub.id} clubName={selectedClub.ad} onBack={goBack} />
         )}
-
-        {currentScreen === "admin-panel" &&
-          (isAdmin ? (
-            <AdminPanelScreen
-              onBack={goBack}
-              onManageClub={(club: Club) => {
-                setSelectedClub(club);
-                navigateTo("manage-club");
-              }}
-            />
-          ) : (
-            <View className="flex-1 justify-center items-center px-6 bg-slate-900">
-              <Text className="text-red-400 text-xl font-bold text-center">Yetkisiz Erişim</Text>
-              <TouchableOpacity
-                onPress={() => navigateTo("clubs")}
-                className="mt-6 bg-indigo-600 px-6 py-3 rounded-xl"
-              >
-                <Text className="text-white font-semibold">Kulüpler Ekranına Dön</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
       </View>
     </SafeAreaView>
   );

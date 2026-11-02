@@ -97,14 +97,24 @@ export interface Announcement {
 // 7. Etkinlik Modeli
 export interface Event {
   id: string;
-  club_id: string;
-  olusturan_id: string;
-  baslik: string;
-  aciklama: string;
-  tarih: string;
-  konum: string;
-  kontenjan?: number; // Boş bırakılırsa sınırsız
-  durum: EventStatus;
+  title?: string;
+  name?: string;
+  description?: string;
+  details?: string;
+  location?: string;
+  venue?: string;
+  date?: string;
+  eventDate?: string;
+  quota?: number;
+  targetAudience?: "all" | "admin" | "club_manager";
+  createdBy?: string;
+  createdAt?: string;
+  clubId?: string;
+  club_id?: string;
+  clubName?: string;
+  club_name?: string;
+  participants?: string[];
+  attendees?: string[];
 }
 
 // 8. Etkinlik Katılımı (RSVP)
