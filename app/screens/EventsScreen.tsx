@@ -289,7 +289,7 @@ export default function EventsScreen({ navigation }: any) {
             <View className="flex-row items-center gap-2">
               {!isClubEvent && (
                 <TouchableOpacity
-                  onPress={() => navigation?.navigate("EditEvent", { eventId: item.id })}
+                  onPress={() => navigation?.navigate("EditEventScreen", { eventId: item.id })}
                   className="p-1.5 bg-slate-700 rounded-md"
                 >
                   <Text className="text-xs">✏️</Text>

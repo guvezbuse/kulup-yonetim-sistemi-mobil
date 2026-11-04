@@ -4,13 +4,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   Alert,
   ActivityIndicator,
+  BackHandler,
+  ScrollView,
 } from "react-native";
 import { createEvent } from "../../services/eventService";
 import { useAuthStore } from "../../store/authStore";
-import { Timestamp, collection, getDocs, query, where } from "firebase/firestore";
+import { Timestamp, collection, getDocs, query, where, doc, getDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 
 interface CreateEventScreenProps {
@@ -22,24 +23,29 @@ interface CreateEventScreenProps {
 export default function CreateEventScreen({ onBack, navigation, route }: CreateEventScreenProps) {
   const { user } = useAuthStore();
 
-  // Form State Tanımlamaları (İngilizce standart değişkenler ve Türkçe açıklamaları)
-  const [title, setTitle] = useState(""); // Etkinlik başlığı (başlık)
-  const [description, setDescription] = useState(""); // Etkinlik detaylı açıklaması (açıklama)
-  const [location, setLocation] = useState(""); // Etkinlik konumu / mekanı (konum)
-  const [dateInput, setDateInput] = useState(""); // Kullanıcının girdiği ham tarih string'i (tarih)
-  const [quota, setQuota] = useState(""); // Maksimum katılımcı kontenjanı - opsiyonel (kontenjan)
-  const [imageUrl, setImageUrl] = useState(""); // Etkinlik afişi / görseli için URL (görsel_url)
-  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all"); // Hedef kitle kategorisi (hedef_kitle)
-  const [status, setStatus] = useState<"yayinlanan" | "taslak">("yayinlanan"); // Etkinlik durumu: taslak veya yayınlanan (durum)
-  const [clubId, setClubId] = useState<string>(route?.params?.clubId || ""); // Bağlı olduğu kulübün ID'si (club_id)
-  const [managedClubs, setManagedClubs] = useState<any[]>([]); // Yöneticisi olduğu kulüplerin listesi
-  const [loading, setLoading] = useState(false); // Yüklenme durumu göstergesi
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
+  const [dateInput, setDateInput] = useState("");
+  const [quota, setQuota] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all");
+  const [status, setStatus] = useState<"yayinlanan" | "taslak">("yayinlanan");
 
-  // Yöneticinin yönettiği kulüpleri çekmek için
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [clubId, setClubId] = useState<string>(route?.params?.clubId || "");
+  const [managedClubs, setManagedClubs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
-    const fetchManagedClubs = async () => {
+    const checkRolesAndClubs = async () => {
       if (!user) return;
       try {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        const userData = userDoc.exists() ? userDoc.data() : null;
+        const adminFlag = userData?.is_admin === true || userData?.role === "admin";
+        setIsAdmin(!!adminFlag);
+
         const clubsRef = collection(db, "clubs");
         const q1 = query(clubsRef, where("yonetici_uid", "==", user.uid));
         const q2 = query(clubsRef, where("managerId", "==", user.uid));
@@ -53,16 +59,26 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
         const clubsList = Array.from(clubsMap.values());
         setManagedClubs(clubsList);
 
-        if (clubsList.length > 0 && !clubId) {
+        if (clubsList.length > 0 && !clubId && !adminFlag) {
           setClubId(clubsList[0].id);
         }
       } catch (error) {
-        console.log("Kulüpler yüklenirken hata:", error);
+        console.log("Rol/Kulüp yükleme hatası:", error);
       }
     };
 
-    fetchManagedClubs();
+    checkRolesAndClubs();
   }, [user]);
+
+  // Donanımsal Geri Tuşu Desteği
+  useEffect(() => {
+    const backAction = () => {
+      handleGoBack();
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
+    return () => backHandler.remove();
+  }, []);
 
   const handleGoBack = () => {
     if (onBack) {
@@ -72,11 +88,9 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
     }
   };
 
-  // Tarih metnini güvenli bir Date nesnesine dönüştüren fonksiyon
   const convertToDateObject = (input: string): Date | null => {
     const trimmed = input.trim();
     if (!trimmed) return null;
-
     let d = new Date(trimmed.replace(" ", "T"));
     if (!isNaN(d.getTime())) return d;
 
@@ -87,11 +101,9 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       const year = parseInt(parts[2], 10);
       const hour = parts[3] ? parseInt(parts[3], 10) : 0;
       const minute = parts[4] ? parseInt(parts[4], 10) : 0;
-
       d = new Date(year, month, day, hour, minute);
       if (!isNaN(d.getTime())) return d;
     }
-
     return null;
   };
 
@@ -101,41 +113,36 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       return;
     }
 
-    if (!clubId) {
+    if (!isAdmin && !clubId && managedClubs.length > 0) {
       Alert.alert("Hata", "Lütfen etkinliğin ait olduğu kulübü seçin.");
       return;
     }
 
     const eventDateObj = convertToDateObject(dateInput);
     if (!eventDateObj) {
-      Alert.alert(
-        "Hatalı Tarih Biçimi",
-        "Lütfen tarihi aşağıdaki biçimlerden birinde girin:\n\n2026-11-15 14:30\n15.11.2026 14:30",
-      );
+      Alert.alert("Hatalı Tarih", "Örn format: 15.11.2026 14:30");
       return;
     }
 
     try {
       setLoading(true);
-
-      // Etkinlik veri modeli (Event Payload)
       const eventPayload: Record<string, any> = {
-        title: title.trim(), // Etkinlik Başlığı (başlık)
-        description: description.trim(), // Etkinlik Açıklaması (açıklama)
-        location: location.trim(), // Etkinlik Konumu / Mekanı (konum)
-        date: Timestamp.fromDate(eventDateObj), // Etkinlik Tarihi ve Saati - Firestore Timestamp (tarih)
-        targetAudience: targetAudience, // Etkinliğin Hedef Kitlesi
-        imageUrl: imageUrl.trim(), // Etkinlik Afişi / Görsel Bağlantısı (görsel_url)
-        clubId: clubId, // Bağlı Olduğu Kulüp ID'si (club_id)
-        status: status, // Etkinlik Durumu: "yayinlanan" veya "taslak" (durum)
-        createdBy: user?.uid || "", // Etkinliği Oluşturan Yöneticinin ID'si (oluşturan_id)
-        createdAt: Timestamp.now(), // Kaydın Oluşturulma Zamanı (oluşturulma_tarihi)
-        attendees: [], // Katılımcı RSVP listesi (attendees)
-        participants: [], // Alternatif katılımcı dizisi
+        title: title.trim(),
+        description: description.trim(),
+        location: location.trim(),
+        date: Timestamp.fromDate(eventDateObj),
+        targetAudience,
+        imageUrl: imageUrl.trim(),
+        clubId: clubId || null,
+        status,
+        createdBy: user?.uid || "",
+        createdAt: Timestamp.now(),
+        attendees: [],
+        participants: [],
       };
 
       if (quota.trim()) {
-        eventPayload.quota = parseInt(quota, 10); // Kontenjan (kontenjan)
+        eventPayload.quota = parseInt(quota, 10);
       }
 
       await createEvent(eventPayload);
@@ -151,143 +158,135 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
 
   return (
     <ScrollView className="flex-1 bg-slate-900 p-4" showsVerticalScrollIndicator={false}>
-      <TouchableOpacity onPress={handleGoBack} className="mb-4">
-        <Text className="text-indigo-400 font-semibold">← Geri Dön</Text>
-      </TouchableOpacity>
+      <Text className="text-white font-bold text-xl mb-4 text-center">Yeni Etkinlik Oluştur</Text>
 
-      <Text className="text-2xl font-bold text-white mb-6">Yeni Etkinlik Oluştur</Text>
-
-      {/* Hedef Kitle Seçim Butonları */}
-      <Text className="text-slate-300 font-semibold mb-2">Hedef Kitle (Target Audience)</Text>
-      <View className="flex-row gap-2 mb-4">
-        {[
-          { label: "Üniversite Geneli", value: "all" },
-          { label: "Adminler", value: "admin" },
-          { label: "Kulüp Yöneticileri", value: "club_manager" },
-        ].map((item) => (
-          <TouchableOpacity
-            key={item.value}
-            onPress={() => setTargetAudience(item.value as any)}
-            className={`flex-1 p-3 rounded-lg border ${
-              targetAudience === item.value
-                ? "bg-indigo-600 border-indigo-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-xs font-semibold text-center">{item.label}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* Hedef Kitle */}
+      <View className="mb-3">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">Hedef Kitle</Text>
+        <View className="flex-row gap-2">
+          {[
+            { label: "Genel", value: "all" },
+            { label: "Admin", value: "admin" },
+            { label: "Yönetici", value: "club_manager" },
+          ].map((item) => (
+            <TouchableOpacity
+              key={item.value}
+              onPress={() => setTargetAudience(item.value as any)}
+              className={`flex-1 py-2 rounded-lg border items-center ${
+                targetAudience === item.value
+                  ? "bg-indigo-600 border-indigo-500"
+                  : "bg-slate-800 border-slate-700"
+              }`}
+            >
+              <Text className="text-white text-xs font-semibold">{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      {/* Kulüp Seçimi */}
-      <Text className="text-slate-300 font-semibold mb-2">Etkinlik Düzenlenen Kulüp *</Text>
-      <View className="flex-row flex-wrap gap-2 mb-4">
-        {managedClubs.map((club) => (
-          <TouchableOpacity
-            key={club.id}
-            onPress={() => setClubId(club.id)}
-            className={`p-3 rounded-lg border ${
-              clubId === club.id
-                ? "bg-indigo-600 border-indigo-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-xs font-semibold">{club.ad || club.name}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* Durum (Yayınla / Taslak) */}
+      <View className="flex-row gap-2 mb-3">
+        <TouchableOpacity
+          onPress={() => setStatus("yayinlanan")}
+          className={`flex-1 py-2 rounded-lg border items-center ${
+            status === "yayinlanan"
+              ? "bg-emerald-600 border-emerald-500"
+              : "bg-slate-800 border-slate-700"
+          }`}
+        >
+          <Text className="text-white text-xs font-semibold">Yayınla</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setStatus("taslak")}
+          className={`flex-1 py-2 rounded-lg border items-center ${
+            status === "taslak" ? "bg-amber-600 border-amber-500" : "bg-slate-800 border-slate-700"
+          }`}
+        >
+          <Text className="text-white text-xs font-semibold">Taslak</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Etkinlik Durumu Seçimi */}
-      <Text className="text-slate-300 font-semibold mb-2">Etkinlik Durumu (Status)</Text>
-      <View className="flex-row gap-2 mb-4">
-        {[
-          { label: "Yayınla", value: "yayinlanan" },
-          { label: "Taslak Olarak Kaydet", value: "taslak" },
-        ].map((item) => (
-          <TouchableOpacity
-            key={item.value}
-            onPress={() => setStatus(item.value as any)}
-            className={`flex-1 p-3 rounded-lg border ${
-              status === item.value
-                ? "bg-emerald-600 border-emerald-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-xs font-semibold text-center">{item.label}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* Başlık ve Konum */}
+      <View className="mb-3">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">Etkinlik Başlığı *</Text>
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Etkinlik adını girin"
+          placeholderTextColor="#64748b"
+          className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
+        />
       </View>
 
-      {/* Etkinlik Başlığı Girdisi */}
-      <Text className="text-slate-300 font-semibold mb-1">Etkinlik Başlığı *</Text>
-      <TextInput
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Etkinlik adını girin"
-        placeholderTextColor="#64748b"
-        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
-      />
+      <View className="mb-3">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">Konum / Mekan *</Text>
+        <TextInput
+          value={location}
+          onChangeText={setLocation}
+          placeholder="Örn: Konferans Salonu"
+          placeholderTextColor="#64748b"
+          className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
+        />
+      </View>
 
-      {/* Etkinlik Açıklaması Girdisi */}
-      <Text className="text-slate-300 font-semibold mb-1">Açıklama *</Text>
-      <TextInput
-        value={description}
-        onChangeText={setDescription}
-        multiline
-        numberOfLines={4}
-        placeholder="Etkinlik detaylarını girin"
-        placeholderTextColor="#64748b"
-        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700 h-24"
-      />
+      {/* Açıklama */}
+      <View className="mb-3">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">Açıklama *</Text>
+        <TextInput
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Etkinlik detayları..."
+          placeholderTextColor="#64748b"
+          className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm h-20"
+          multiline
+        />
+      </View>
 
-      {/* Konum / Mekan Girdisi */}
-      <Text className="text-slate-300 font-semibold mb-1">Konum / Mekan *</Text>
-      <TextInput
-        value={location}
-        onChangeText={setLocation}
-        placeholder="Örn: Kongre Merkezi Salon A"
-        placeholderTextColor="#64748b"
-        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
-      />
+      {/* Tarih ve Kontenjan */}
+      <View className="mb-3">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">
+          Tarih ve Saat * (GG.AA.YYYY SS:DD)
+        </Text>
+        <TextInput
+          value={dateInput}
+          onChangeText={setDateInput}
+          placeholder="15.11.2026 14:30"
+          placeholderTextColor="#64748b"
+          className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
+        />
+      </View>
 
-      {/* Tarih ve Saat Girdisi */}
-      <Text className="text-slate-300 font-semibold mb-1">
-        Tarih ve Saat * (Örn: 2026-11-15 14:30 veya 15.11.2026 14:30)
-      </Text>
-      <TextInput
-        value={dateInput}
-        onChangeText={setDateInput}
-        placeholder="2026-11-15 14:30"
-        placeholderTextColor="#64748b"
-        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
-      />
+      <View className="mb-3">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">Kontenjan (Opsiyonel)</Text>
+        <TextInput
+          value={quota}
+          onChangeText={setQuota}
+          keyboardType="numeric"
+          placeholder="Sınırsız için boş bırakın"
+          placeholderTextColor="#64748b"
+          className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
+        />
+      </View>
 
-      {/* Görsel / Fotoğraf URL Girdisi (Opsiyonel) */}
-      <Text className="text-slate-300 font-semibold mb-1">Etkinlik Görseli URL (Opsiyonel)</Text>
-      <TextInput
-        value={imageUrl}
-        onChangeText={setImageUrl}
-        placeholder="https://ornek.com/afis.jpg"
-        placeholderTextColor="#64748b"
-        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
-      />
+      {/* Görsel URL */}
+      <View className="mb-6">
+        <Text className="text-slate-300 text-xs font-semibold mb-1">
+          Etkinlik Görseli URL (Opsiyonel)
+        </Text>
+        <TextInput
+          value={imageUrl}
+          onChangeText={setImageUrl}
+          placeholder="https://ornek.com/afis.jpg"
+          placeholderTextColor="#64748b"
+          className="bg-slate-800 text-screen text-white p-3 rounded-lg border border-slate-700 text-sm"
+        />
+      </View>
 
-      {/* Kontenjan Girdisi (Opsiyonel) */}
-      <Text className="text-slate-300 font-semibold mb-1">Kontenjan (Opsiyonel)</Text>
-      <TextInput
-        value={quota}
-        onChangeText={setQuota}
-        keyboardType="numeric"
-        placeholder="Sınırsız için boş bırakın"
-        placeholderTextColor="#64748b"
-        className="bg-slate-800 text-white p-3 rounded-lg mb-6 border border-slate-700"
-      />
-
-      {/* Kaydet / Yayınla Butonu */}
+      {/* Kaydet Butonu */}
       <TouchableOpacity
         onPress={handleCreate}
         disabled={loading}
-        className="bg-indigo-600 p-4 rounded-xl items-center mb-10"
+        className="bg-indigo-600 p-4 rounded-xl items-center mb-8"
       >
         {loading ? (
           <ActivityIndicator color="#fff" />
