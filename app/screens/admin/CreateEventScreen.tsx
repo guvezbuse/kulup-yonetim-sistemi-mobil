@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,23 +10,59 @@ import {
 } from "react-native";
 import { createEvent } from "../../services/eventService";
 import { useAuthStore } from "../../store/authStore";
-import { Timestamp } from "firebase/firestore";
+import { Timestamp, collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 
 interface CreateEventScreenProps {
   onBack?: () => void;
   navigation?: any;
+  route?: any;
 }
 
-export default function CreateEventScreen({ onBack, navigation }: CreateEventScreenProps) {
+export default function CreateEventScreen({ onBack, navigation, route }: CreateEventScreenProps) {
   const { user } = useAuthStore();
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [dateInput, setDateInput] = useState("");
-  const [quota, setQuota] = useState("");
-  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all");
-  const [loading, setLoading] = useState(false);
+  // Form State Tanımlamaları (İngilizce standart değişkenler ve Türkçe açıklamaları)
+  const [title, setTitle] = useState(""); // Etkinlik başlığı (başlık)
+  const [description, setDescription] = useState(""); // Etkinlik detaylı açıklaması (açıklama)
+  const [location, setLocation] = useState(""); // Etkinlik konumu / mekanı (konum)
+  const [dateInput, setDateInput] = useState(""); // Kullanıcının girdiği ham tarih string'i (tarih)
+  const [quota, setQuota] = useState(""); // Maksimum katılımcı kontenjanı - opsiyonel (kontenjan)
+  const [imageUrl, setImageUrl] = useState(""); // Etkinlik afişi / görseli için URL (görsel_url)
+  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all"); // Hedef kitle kategorisi (hedef_kitle)
+  const [status, setStatus] = useState<"yayinlanan" | "taslak">("yayinlanan"); // Etkinlik durumu: taslak veya yayınlanan (durum)
+  const [clubId, setClubId] = useState<string>(route?.params?.clubId || ""); // Bağlı olduğu kulübün ID'si (club_id)
+  const [managedClubs, setManagedClubs] = useState<any[]>([]); // Yöneticisi olduğu kulüplerin listesi
+  const [loading, setLoading] = useState(false); // Yüklenme durumu göstergesi
+
+  // Yöneticinin yönettiği kulüpleri çekmek için
+  useEffect(() => {
+    const fetchManagedClubs = async () => {
+      if (!user) return;
+      try {
+        const clubsRef = collection(db, "clubs");
+        const q1 = query(clubsRef, where("yonetici_uid", "==", user.uid));
+        const q2 = query(clubsRef, where("managerId", "==", user.uid));
+        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+
+        const clubsMap = new Map();
+        [...snap1.docs, ...snap2.docs].forEach((docSnap) => {
+          clubsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+        });
+
+        const clubsList = Array.from(clubsMap.values());
+        setManagedClubs(clubsList);
+
+        if (clubsList.length > 0 && !clubId) {
+          setClubId(clubsList[0].id);
+        }
+      } catch (error) {
+        console.log("Kulüpler yüklenirken hata:", error);
+      }
+    };
+
+    fetchManagedClubs();
+  }, [user]);
 
   const handleGoBack = () => {
     if (onBack) {
@@ -36,6 +72,7 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
     }
   };
 
+  // Tarih metnini güvenli bir Date nesnesine dönüştüren fonksiyon
   const convertToDateObject = (input: string): Date | null => {
     const trimmed = input.trim();
     if (!trimmed) return null;
@@ -64,11 +101,16 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
       return;
     }
 
+    if (!clubId) {
+      Alert.alert("Hata", "Lütfen etkinliğin ait olduğu kulübü seçin.");
+      return;
+    }
+
     const eventDateObj = convertToDateObject(dateInput);
     if (!eventDateObj) {
       Alert.alert(
         "Hatalı Tarih Biçimi",
-        "Lütfen tarihi aşağıdaki biçimlerden birinde girin:\n\n• 2026-11-15 14:30\n• 15.11.2026 14:30",
+        "Lütfen tarihi aşağıdaki biçimlerden birinde girin:\n\n2026-11-15 14:30\n15.11.2026 14:30",
       );
       return;
     }
@@ -76,28 +118,24 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
     try {
       setLoading(true);
 
+      // Etkinlik veri modeli (Event Payload)
       const eventPayload: Record<string, any> = {
-        title: title.trim(),
-        name: title.trim(),
-        baslik: title.trim(),
-        description: description.trim(),
-        aciklama: description.trim(),
-        location: location.trim(),
-        konum: location.trim(),
-        // String DEĞİL, Kesin Firestore Timestamp!
-        eventDate: Timestamp.fromDate(eventDateObj),
-        date: Timestamp.fromDate(eventDateObj),
-        tarih: Timestamp.fromDate(eventDateObj),
-        targetAudience,
-        createdBy: user?.uid || "admin",
-        createdAt: Timestamp.now(),
-        participants: [],
-        attendees: [],
+        title: title.trim(), // Etkinlik Başlığı (başlık)
+        description: description.trim(), // Etkinlik Açıklaması (açıklama)
+        location: location.trim(), // Etkinlik Konumu / Mekanı (konum)
+        date: Timestamp.fromDate(eventDateObj), // Etkinlik Tarihi ve Saati - Firestore Timestamp (tarih)
+        targetAudience: targetAudience, // Etkinliğin Hedef Kitlesi
+        imageUrl: imageUrl.trim(), // Etkinlik Afişi / Görsel Bağlantısı (görsel_url)
+        clubId: clubId, // Bağlı Olduğu Kulüp ID'si (club_id)
+        status: status, // Etkinlik Durumu: "yayinlanan" veya "taslak" (durum)
+        createdBy: user?.uid || "", // Etkinliği Oluşturan Yöneticinin ID'si (oluşturan_id)
+        createdAt: Timestamp.now(), // Kaydın Oluşturulma Zamanı (oluşturulma_tarihi)
+        attendees: [], // Katılımcı RSVP listesi (attendees)
+        participants: [], // Alternatif katılımcı dizisi
       };
 
       if (quota.trim()) {
-        eventPayload.quota = parseInt(quota, 10);
-        eventPayload.kontenjan = parseInt(quota, 10);
+        eventPayload.quota = parseInt(quota, 10); // Kontenjan (kontenjan)
       }
 
       await createEvent(eventPayload);
@@ -119,7 +157,8 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
 
       <Text className="text-2xl font-bold text-white mb-6">Yeni Etkinlik Oluştur</Text>
 
-      <Text className="text-slate-300 font-semibold mb-2">Hedef Kitle</Text>
+      {/* Hedef Kitle Seçim Butonları */}
+      <Text className="text-slate-300 font-semibold mb-2">Hedef Kitle (Target Audience)</Text>
       <View className="flex-row gap-2 mb-4">
         {[
           { label: "Üniversite Geneli", value: "all" },
@@ -140,6 +179,46 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         ))}
       </View>
 
+      {/* Kulüp Seçimi */}
+      <Text className="text-slate-300 font-semibold mb-2">Etkinlik Düzenlenen Kulüp *</Text>
+      <View className="flex-row flex-wrap gap-2 mb-4">
+        {managedClubs.map((club) => (
+          <TouchableOpacity
+            key={club.id}
+            onPress={() => setClubId(club.id)}
+            className={`p-3 rounded-lg border ${
+              clubId === club.id
+                ? "bg-indigo-600 border-indigo-500"
+                : "bg-slate-800 border-slate-700"
+            }`}
+          >
+            <Text className="text-white text-xs font-semibold">{club.ad || club.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Etkinlik Durumu Seçimi */}
+      <Text className="text-slate-300 font-semibold mb-2">Etkinlik Durumu (Status)</Text>
+      <View className="flex-row gap-2 mb-4">
+        {[
+          { label: "Yayınla", value: "yayinlanan" },
+          { label: "Taslak Olarak Kaydet", value: "taslak" },
+        ].map((item) => (
+          <TouchableOpacity
+            key={item.value}
+            onPress={() => setStatus(item.value as any)}
+            className={`flex-1 p-3 rounded-lg border ${
+              status === item.value
+                ? "bg-emerald-600 border-emerald-500"
+                : "bg-slate-800 border-slate-700"
+            }`}
+          >
+            <Text className="text-white text-xs font-semibold text-center">{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Etkinlik Başlığı Girdisi */}
       <Text className="text-slate-300 font-semibold mb-1">Etkinlik Başlığı *</Text>
       <TextInput
         value={title}
@@ -149,6 +228,7 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
       />
 
+      {/* Etkinlik Açıklaması Girdisi */}
       <Text className="text-slate-300 font-semibold mb-1">Açıklama *</Text>
       <TextInput
         value={description}
@@ -160,6 +240,7 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700 h-24"
       />
 
+      {/* Konum / Mekan Girdisi */}
       <Text className="text-slate-300 font-semibold mb-1">Konum / Mekan *</Text>
       <TextInput
         value={location}
@@ -169,6 +250,7 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
       />
 
+      {/* Tarih ve Saat Girdisi */}
       <Text className="text-slate-300 font-semibold mb-1">
         Tarih ve Saat * (Örn: 2026-11-15 14:30 veya 15.11.2026 14:30)
       </Text>
@@ -180,6 +262,17 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
       />
 
+      {/* Görsel / Fotoğraf URL Girdisi (Opsiyonel) */}
+      <Text className="text-slate-300 font-semibold mb-1">Etkinlik Görseli URL (Opsiyonel)</Text>
+      <TextInput
+        value={imageUrl}
+        onChangeText={setImageUrl}
+        placeholder="https://ornek.com/afis.jpg"
+        placeholderTextColor="#64748b"
+        className="bg-slate-800 text-white p-3 rounded-lg mb-4 border border-slate-700"
+      />
+
+      {/* Kontenjan Girdisi (Opsiyonel) */}
       <Text className="text-slate-300 font-semibold mb-1">Kontenjan (Opsiyonel)</Text>
       <TextInput
         value={quota}
@@ -190,6 +283,7 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         className="bg-slate-800 text-white p-3 rounded-lg mb-6 border border-slate-700"
       />
 
+      {/* Kaydet / Yayınla Butonu */}
       <TouchableOpacity
         onPress={handleCreate}
         disabled={loading}
@@ -198,7 +292,7 @@ export default function CreateEventScreen({ onBack, navigation }: CreateEventScr
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text className="text-white font-bold text-base">Etkinliği Yayınla</Text>
+          <Text className="text-white font-bold text-base">Etkinliği Kaydet</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

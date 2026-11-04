@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import { useAuthStore } from "../store/authStore";
 import * as eventService from "../services/eventService";
@@ -23,6 +24,7 @@ export default function EventsScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
+  // Kullanıcı yetkilerini kontrol etme
   useEffect(() => {
     const checkUserRoles = async () => {
       if (!user) {
@@ -63,6 +65,7 @@ export default function EventsScreen({ navigation }: any) {
     checkUserRoles();
   }, [user]);
 
+  // Etkinlikleri veritabanından çekme
   const fetchEvents = async () => {
     try {
       const fetchFn =
@@ -87,6 +90,7 @@ export default function EventsScreen({ navigation }: any) {
     fetchEvents();
   }, []);
 
+  // Etkinlik silme fonksiyonu
   const handleDelete = (eventId: string) => {
     Alert.alert("Etkinliği Sil", "Bu etkinliği silmek istediğinizden emin misiniz?", [
       { text: "İptal", style: "cancel" },
@@ -110,11 +114,12 @@ export default function EventsScreen({ navigation }: any) {
     ]);
   };
 
+  // RSVP (Etkinliğe katılım / katılmaktan vazgeçme) işlemi
   const handleRSVP = async (event: any) => {
     if (!user) return;
     const attendeesList = event.attendees || event.participants || [];
     const isAttending = attendeesList.includes(user.uid);
-    const quota = event.quota || event.kontenjan;
+    const quota = event.quota;
 
     if (!isAttending && quota && attendeesList.length >= quota) {
       Alert.alert("Kontenjan Dolu", "Maalesef bu etkinliğin kontenjanı dolmuştur.");
@@ -139,9 +144,9 @@ export default function EventsScreen({ navigation }: any) {
     }
   };
 
-  // Tüm Veri Tiplerini Kapsayan Güvenli Tarih Çevirici
+  // Standart İngilizce 'date' alanını güvenli Date nesnesine çeviren fonksiyon (Timestamp desteği)
   const getCleanDate = (item: any): Date | null => {
-    const raw = item.eventDate || item.date || item.tarih || item.tarih_saat;
+    const raw = item.date; // Standart şemadaki date alanı
     if (!raw) return null;
 
     if (raw?.seconds) {
@@ -151,29 +156,16 @@ export default function EventsScreen({ navigation }: any) {
     if (typeof raw === "string") {
       let d = new Date(raw.replace(" ", "T"));
       if (!isNaN(d.getTime())) return d;
-
-      // DD.MM.YYYY HH:mm parçalama
-      const parts = raw.split(/[\s.:/-]+/);
-      if (parts.length >= 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1;
-        const year = parseInt(parts[2], 10);
-        const hour = parts[3] ? parseInt(parts[3], 10) : 0;
-        const minute = parts[4] ? parseInt(parts[4], 10) : 0;
-
-        d = new Date(year, month, day, hour, minute);
-        if (!isNaN(d.getTime())) return d;
-      }
     }
 
     return null;
   };
 
+  // Etkinlik tarihini okunaklı formata çevirme
   const formatEventDate = (item: any): string => {
     const d = getCleanDate(item);
     if (!d) {
-      const fallback = item.eventDate || item.date || item.tarih || item.tarih_saat;
-      return typeof fallback === "string" && fallback.trim() ? fallback : "Tarih Belirtilmedi";
+      return typeof item.date === "string" && item.date.trim() ? item.date : "Tarih Belirtilmedi";
     }
 
     return d.toLocaleDateString("tr-TR", {
@@ -185,8 +177,9 @@ export default function EventsScreen({ navigation }: any) {
     });
   };
 
+  // Yayınlanma tarihini formatlama (createdAt)
   const formatPublishedDate = (item: any): string => {
-    const raw = item.createdAt || item.olusturmaTarihi;
+    const raw = item.createdAt;
     if (!raw) return "";
 
     let d: Date;
@@ -204,16 +197,18 @@ export default function EventsScreen({ navigation }: any) {
 
   const nowTime = new Date().getTime();
 
-  // FİLTRELEME
+  // FİLTRELEME MANTIĞI (Hedef Kitle, Taslak Durumu ve Yaklaşan/Geçmiş Sekmeleri)
   const filteredEvents = events.filter((e: any) => {
-    const audience = (e.targetAudience || e.hedefKitle || "").toLowerCase();
+    // Taslak olan etkinlikler normal kullanıcılara gösterilmesin (Yönetici görebilir veya gizlenebilir)
+    if (e.status === "taslak" && !isAdmin && !isClubManager) return false;
+
+    const audience = (e.targetAudience || "").toLowerCase();
 
     if (audience === "admin" && !isAdmin) return false;
     if (audience === "club_manager" && !isAdmin && !isClubManager) return false;
 
     const eventDate = getCleanDate(e);
 
-    // Eğer tarih parse edilemiyorsa varsayılan olarak yaklaşanlarda gösterilsin (kaybolmasın)
     if (!eventDate) {
       return tab === "upcoming";
     }
@@ -226,22 +221,25 @@ export default function EventsScreen({ navigation }: any) {
     return eventTime < nowTime;
   });
 
+  // Etkinlik Kartı Bileşeni
   const renderEventCard = ({ item }: { item: any }) => {
     const attendeesList = item.attendees || item.participants || [];
     const isAttending = attendeesList.includes(user?.uid || "");
-    const isClubEvent = !!item.clubId || !!item.club_id || !!item.kulup_id;
+    const isClubEvent = !!item.clubId;
 
-    const title = item.title || item.name || item.baslik || "İsimsiz Etkinlik";
-    const description = item.description || item.aciklama || "";
-    const location = item.location || item.konum || "Konum Belirtilmedi";
+    // Standart İngilizce değişkenlerin okunması
+    const title = item.title || "İsimsiz Etkinlik";
+    const description = item.description || "";
+    const location = item.location || "Konum Belirtilmedi";
+    const imageUrl = item.imageUrl || ""; // Yeni eklenen görsel URL alanı
     const eventDateStr = formatEventDate(item);
     const publishedDateStr = formatPublishedDate(item);
 
-    const quota = item.quota || item.kontenjan;
+    const quota = item.quota;
     const currentAttendeeCount = attendeesList.length;
     const isFull = quota ? currentAttendeeCount >= quota : false;
 
-    const audience = (item.targetAudience || item.hedefKitle || "").toLowerCase();
+    const audience = (item.targetAudience || "").toLowerCase();
 
     let badgeText = "Genel Etkinlik";
     let badgeBg = "bg-indigo-500/20";
@@ -256,19 +254,33 @@ export default function EventsScreen({ navigation }: any) {
       badgeBg = "bg-purple-500/20";
       badgeTextClr = "text-purple-400";
     } else if (isClubEvent) {
-      badgeText = item.clubName || item.club_name || item.kulup_adi || "Kulüp Etkinliği";
+      badgeText = item.clubName || "Kulüp Etkinliği";
       badgeBg = "bg-amber-500/20";
       badgeTextClr = "text-amber-400";
     }
 
     return (
       <View className="bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700">
+        {/* Etkinlik Görseli (Eğer URL girilmişse gösterilir) */}
+        {!!imageUrl && (
+          <Image
+            source={{ uri: imageUrl }}
+            className="w-full h-40 rounded-lg mb-3 bg-slate-700"
+            resizeMode="cover"
+          />
+        )}
+
         <View className="flex-row justify-between items-start mb-2">
           <View className="flex-1 mr-2">
             <View className="flex-row items-center gap-2 mb-1">
               <View className={`px-2 py-0.5 rounded ${badgeBg}`}>
                 <Text className={`text-xs font-semibold ${badgeTextClr}`}>{badgeText}</Text>
               </View>
+              {item.status === "taslak" && (
+                <View className="px-2 py-0.5 rounded bg-yellow-500/20">
+                  <Text className="text-xs font-semibold text-yellow-400">Taslak</Text>
+                </View>
+              )}
             </View>
             <Text className="text-white font-bold text-lg">{title}</Text>
           </View>
@@ -333,7 +345,7 @@ export default function EventsScreen({ navigation }: any) {
     <View className="flex-1 bg-slate-900 p-4">
       <View className="flex-row justify-between items-center mb-4">
         <Text className="text-2xl font-bold text-white">Etkinlikler</Text>
-        {isAdmin && (
+        {(isAdmin || isClubManager) && (
           <TouchableOpacity
             onPress={() => navigation?.navigate("CreateEvent")}
             className="bg-indigo-600 px-3 py-2 rounded-lg"

@@ -38,6 +38,7 @@ export const getClubEvents = getEvents;
 export const getEventsByClub = async (clubId: string): Promise<Event[]> => {
   try {
     const eventsRef = collection(db, EVENTS_COLLECTION);
+    // Yeni standart 'clubId' ve geriye dönük eski alan adları desteği
     const q1 = query(eventsRef, where("clubId", "==", clubId));
     const q2 = query(eventsRef, where("club_id", "==", clubId));
     const q3 = query(eventsRef, where("kulup_id", "==", clubId));
@@ -89,7 +90,7 @@ export const deleteEvent = async (eventId: string): Promise<void> => {
 
 export const deleteEventById = deleteEvent;
 
-// 5. Etkinliğe Katıl
+// 5. Etkinliğe Katıl (RSVP)
 export const joinEvent = async (eventId: string, userId: string): Promise<void> => {
   try {
     const eventRef = doc(db, EVENTS_COLLECTION, eventId);
@@ -119,6 +120,7 @@ export const leaveEvent = async (eventId: string, userId: string): Promise<void>
   }
 };
 
+// RSVP Durumuna Göre Katıl / Ayrıl Değiştirici
 export const toggleEventRSVP = async (eventId: string, userId: string, isAttending: boolean) => {
   if (isAttending) {
     return leaveEvent(eventId, userId);
