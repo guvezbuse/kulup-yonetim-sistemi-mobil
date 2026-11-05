@@ -4,6 +4,7 @@ import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { announcementService } from "../../services/announcementService";
 import { useAuthStore } from "../../store/authStore";
+import { getErrorMessage } from "../../lib/errors";
 
 interface CreateClubAnnouncementModalProps {
   visible: boolean;
@@ -35,11 +36,9 @@ export default function CreateClubAnnouncementModal({
 
     setLoading(true);
     try {
-      const managerName =
-        (profile as any)?.full_name ||
-        (profile as any)?.ad_soyad ||
-        user?.email ||
-        "Kulüp Yöneticisi";
+      const managerName = profile?.ad
+        ? `${profile.ad} ${profile.soyad || ""}`.trim()
+        : user?.email || "Kulüp Yöneticisi";
 
       await announcementService.createClubAnnouncement(
         clubId,
@@ -55,8 +54,8 @@ export default function CreateClubAnnouncementModal({
       setIcerik("");
       if (onSuccess) onSuccess();
       onClose();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Duyuru oluşturulamadı.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "Duyuru oluşturulamadı."));
     } finally {
       setLoading(false);
     }

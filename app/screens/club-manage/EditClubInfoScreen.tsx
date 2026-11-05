@@ -4,6 +4,7 @@ import { Card } from "../../components/Card";
 import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { clubService } from "../../services/clubService";
+import { getErrorMessage } from "../../lib/errors";
 
 interface Props {
   clubId: string;
@@ -26,10 +27,8 @@ export default function EditClubInfoScreen({ clubId, clubName, onBack, onDataUpd
       if (currentClub) {
         setEditAd(currentClub.ad || clubName);
         setEditAciklama(currentClub.aciklama || "");
-        setEditDetayliAciklama(
-          currentClub.detayliAciklama || (currentClub as any).fullDescription || "",
-        );
-        setEditGorselUrl(currentClub.gorselUrl || (currentClub as any).imageUrl || "");
+        setEditDetayliAciklama(currentClub.detayliAciklama || "");
+        setEditGorselUrl(currentClub.gorselUrl || "");
       }
     } catch (e) {
       console.log("Kulüp detayı çekilemedi:", e);
@@ -56,8 +55,8 @@ export default function EditClubInfoScreen({ clubId, clubName, onBack, onDataUpd
       });
       Alert.alert("Başarılı", "Kulüp bilgileri güncellendi.");
       if (onDataUpdated) onDataUpdated();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Kulüp bilgileri güncellenemedi.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "Kulüp bilgileri güncellenemedi."));
     } finally {
       setSavingClubInfo(false);
     }
@@ -75,7 +74,7 @@ export default function EditClubInfoScreen({ clubId, clubName, onBack, onDataUpd
             setEditGorselUrl("");
             Alert.alert("Başarılı", "Kulüp görseli silindi.");
             if (onDataUpdated) onDataUpdated();
-          } catch (e: any) {
+          } catch (e) {
             Alert.alert("Hata", "Görsel silinemedi.");
           }
         },

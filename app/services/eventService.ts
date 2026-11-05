@@ -1,147 +1,121 @@
 import {
   collection,
   getDocs,
+  getDoc,
   addDoc,
   doc,
   deleteDoc,
   updateDoc,
-  arrayUnion,
   arrayRemove,
   query,
   where,
+  runTransaction,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Event } from "../types";
+import { Event, EventApplication } from "../types";
 
 const EVENTS_COLLECTION = "events";
 
-// 1. Tüm Etkinlikleri Çek
+const toEvent = (id: string, data: Record<string, unknown>): Event =>
+  ({ ...data, id }) as Event;
+
+// 1. Tüm etkinlikleri çek
 export const getEvents = async (): Promise<Event[]> => {
-  try {
-    const eventsRef = collection(db, EVENTS_COLLECTION);
-    const snapshot = await getDocs(eventsRef);
-
-    return snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...docSnap.data(),
-    })) as Event[];
-  } catch (error) {
-    console.error("getEvents Hatası:", error);
-    return [];
-  }
+  const snapshot = await getDocs(collection(db, EVENTS_COLLECTION));
+  return snapshot.docs.map((docSnap) => toEvent(docSnap.id, docSnap.data()));
 };
 
-export const getAllEvents = getEvents;
-export const getClubEvents = getEvents;
-
-// 2. Kulübe Özel Etkinlikleri Çek (ClubEventsManageScreen için)
-export const getEventsByClub = async (clubId: string): Promise<Event[]> => {
-  try {
-    const eventsRef = collection(db, EVENTS_COLLECTION);
-    // Yeni standart 'clubId' ve geriye dönük eski alan adları desteği
-    const q1 = query(eventsRef, where("clubId", "==", clubId));
-    const q2 = query(eventsRef, where("club_id", "==", clubId));
-    const q3 = query(eventsRef, where("kulup_id", "==", clubId));
-
-    const [snap1, snap2, snap3] = await Promise.all([getDocs(q1), getDocs(q2), getDocs(q3)]);
-
-    const eventsMap = new Map<string, Event>();
-
-    [snap1, snap2, snap3].forEach((snap) => {
-      snap.docs.forEach((docSnap) => {
-        eventsMap.set(docSnap.id, {
-          id: docSnap.id,
-          ...docSnap.data(),
-        } as Event);
-      });
-    });
-
-    return Array.from(eventsMap.values());
-  } catch (error) {
-    console.error("getEventsByClub Hatası:", error);
-    return [];
-  }
+// 2. Tek etkinlik çek
+export const getEventById = async (eventId: string): Promise<Event | null> => {
+  const snap = await getDoc(doc(db, EVENTS_COLLECTION, eventId));
+  return snap.exists() ? toEvent(snap.id, snap.data()) : null;
 };
 
-// 3. Yeni Etkinlik Oluştur
-export const createEvent = async (eventData: Record<string, any>): Promise<string> => {
-  try {
-    const eventsRef = collection(db, EVENTS_COLLECTION);
-    const docRef = await addDoc(eventsRef, eventData);
-    return docRef.id;
-  } catch (error) {
-    console.error("createEvent Hatası:", error);
-    throw error;
-  }
+// 3. Kulübe özel etkinlikleri çek
+export const getClubEvents = async (clubId: string): Promise<Event[]> => {
+  const q = query(collection(db, EVENTS_COLLECTION), where("club_id", "==", clubId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((docSnap) => toEvent(docSnap.id, docSnap.data()));
 };
 
-export const addEvent = createEvent;
+// 4. Etkinlik oluştur
+export const createEvent = async (eventData: Omit<Event, "id">): Promise<string> => {
+  const docRef = await addDoc(collection(db, EVENTS_COLLECTION), eventData);
+  return docRef.id;
+};
 
-// 4. Etkinlik Sil
+// 5. Etkinlik güncelle
+export const updateEvent = async (
+  eventId: string,
+  eventData: Partial<Omit<Event, "id">>,
+): Promise<void> => {
+  await updateDoc(doc(db, EVENTS_COLLECTION, eventId), eventData);
+};
+
+// 6. Etkinlik sil
 export const deleteEvent = async (eventId: string): Promise<void> => {
-  try {
-    const eventRef = doc(db, EVENTS_COLLECTION, eventId);
-    await deleteDoc(eventRef);
-  } catch (error) {
-    console.error("deleteEvent Hatası:", error);
-    throw error;
-  }
+  await deleteDoc(doc(db, EVENTS_COLLECTION, eventId));
 };
 
-export const deleteEventById = deleteEvent;
-
-// 5. Etkinliğe Katıl (RSVP)
+// 7. Etkinliğe katıl (kontenjan kontrolü atomik)
 export const joinEvent = async (eventId: string, userId: string): Promise<void> => {
-  try {
-    const eventRef = doc(db, EVENTS_COLLECTION, eventId);
-    await updateDoc(eventRef, {
-      participants: arrayUnion(userId),
-      attendees: arrayUnion(userId),
-    });
-  } catch (error) {
-    console.error("joinEvent Hatası:", error);
-    throw error;
-  }
+  const eventRef = doc(db, EVENTS_COLLECTION, eventId);
+
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(eventRef);
+    if (!snap.exists()) throw new Error("Etkinlik bulunamadı.");
+
+    const data = snap.data();
+    const katilimcilar: string[] = data.katilimcilar ?? [];
+
+    if (katilimcilar.includes(userId)) return;
+
+    const kontenjan = typeof data.kontenjan === "number" ? data.kontenjan : null;
+    if (kontenjan !== null && katilimcilar.length >= kontenjan) {
+      throw new Error("Etkinlik kontenjanı doldu.");
+    }
+
+    transaction.update(eventRef, { katilimcilar: [...katilimcilar, userId] });
+  });
 };
 
-export const attendEvent = joinEvent;
-
-// 6. Etkinlikten Ayrıl
+// 8. Etkinlikten ayrıl
 export const leaveEvent = async (eventId: string, userId: string): Promise<void> => {
-  try {
-    const eventRef = doc(db, EVENTS_COLLECTION, eventId);
-    await updateDoc(eventRef, {
-      participants: arrayRemove(userId),
-      attendees: arrayRemove(userId),
+  await updateDoc(doc(db, EVENTS_COLLECTION, eventId), {
+    katilimcilar: arrayRemove(userId),
+  });
+};
+
+// 9. Etkinlik katılımcılarını (başvuruları) kullanıcı bilgisiyle çek
+export const getEventApplications = async (eventId: string): Promise<EventApplication[]> => {
+  const event = await getEventById(eventId);
+  if (!event || event.katilimcilar.length === 0) return [];
+
+  const participantIds = new Set(event.katilimcilar);
+  const usersSnapshot = await getDocs(collection(db, "users"));
+
+  return usersSnapshot.docs
+    .filter((userDoc) => participantIds.has(userDoc.id))
+    .map((userDoc) => {
+      const data = userDoc.data();
+      return {
+        user_id: userDoc.id,
+        ad_soyad: data.ad ? `${data.ad} ${data.soyad || ""}`.trim() : data.email || "",
+        email: data.email || "",
+      };
     });
-  } catch (error) {
-    console.error("leaveEvent Hatası:", error);
-    throw error;
-  }
 };
 
-// RSVP Durumuna Göre Katıl / Ayrıl Değiştirici
-export const toggleEventRSVP = async (eventId: string, userId: string, isAttending: boolean) => {
-  if (isAttending) {
-    return leaveEvent(eventId, userId);
-  }
-  return joinEvent(eventId, userId);
-};
-
-// Default Export (Objenin doğrudan import edilmesi durumları için)
 const eventService = {
   getEvents,
-  getAllEvents,
+  getEventById,
   getClubEvents,
-  getEventsByClub,
   createEvent,
-  addEvent,
+  updateEvent,
   deleteEvent,
-  deleteEventById,
   joinEvent,
-  attendEvent,
   leaveEvent,
-  toggleEventRSVP,
+  getEventApplications,
 };
 
 export default eventService;

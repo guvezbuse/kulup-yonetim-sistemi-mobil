@@ -12,53 +12,32 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useAuthStore } from "../store/authStore";
+import { getErrorCode, getErrorMessage } from "../lib/errors";
 
 export interface LoginScreenProps {
-  onNavigateToRegister?: () => void;
-  onNavigateToForgotPassword?: () => void;
-  onNavigateToInvite?: () => void;
-  onNavigateToAcceptInvite?: () => void;
-  onNavigateAcceptInvite?: () => void;
-  onNavigateRegister?: () => void;
-  onNavigateForgotPassword?: () => void;
-  onLoginSuccess?: () => void;
-  onLogin?: () => void;
+  onNavigateToRegister: () => void;
+  onNavigateToForgotPassword: () => void;
+  onNavigateToAcceptInvite: () => void;
+  onLoginSuccess: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({
+  onNavigateToRegister,
+  onNavigateToForgotPassword,
+  onNavigateToAcceptInvite,
+  onLoginSuccess,
+}) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((state) => state.login);
 
-  const handleNavigateRegister = () => {
-    if (props.onNavigateToRegister) {
-      props.onNavigateToRegister();
-    } else if (props.onNavigateRegister) {
-      props.onNavigateRegister();
-    }
-  };
-
   const handleNavigateForgot = () => {
-    if (props.onNavigateToForgotPassword) {
-      props.onNavigateToForgotPassword();
-    } else if (props.onNavigateForgotPassword) {
-      props.onNavigateForgotPassword();
-    } else {
-      Alert.alert("Bilgi", "Şifremi unuttum yönlendirme fonksiyonu atanmamış.");
-    }
+    onNavigateToForgotPassword();
   };
 
   const handleNavigateInvite = () => {
-    if (props.onNavigateToAcceptInvite) {
-      props.onNavigateToAcceptInvite();
-    } else if (props.onNavigateToInvite) {
-      props.onNavigateToInvite();
-    } else if (props.onNavigateAcceptInvite) {
-      props.onNavigateAcceptInvite();
-    } else {
-      Alert.alert("Bilgi", "Davet kabul yönlendirmesi tanımlanmamış.");
-    }
+    onNavigateToAcceptInvite();
   };
 
   const handleLogin = async () => {
@@ -70,23 +49,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
     setLoading(true);
     try {
       await login(email.trim(), password);
-      if (props.onLoginSuccess) {
-        props.onLoginSuccess();
-      } else if (props.onLogin) {
-        props.onLogin();
-      }
-    } catch (error: any) {
+      onLoginSuccess();
+    } catch (error) {
+      const code = getErrorCode(error);
       let msg = "Giriş yapılırken bir hata oluştu.";
-      if (error.code === "auth/invalid-email") {
+      if (code === "auth/invalid-email") {
         msg = "Geçersiz e-posta formatı.";
       } else if (
-        error.code === "auth/user-not-found" ||
-        error.code === "auth/wrong-password" ||
-        error.code === "auth/invalid-credential"
+        code === "auth/user-not-found" ||
+        code === "auth/wrong-password" ||
+        code === "auth/invalid-credential"
       ) {
         msg = "E-posta veya şifre hatalı.";
-      } else if (error.message) {
-        msg = error.message;
+      } else {
+        msg = getErrorMessage(error, msg);
       }
       Alert.alert("Giriş Başarısız", msg);
     } finally {
@@ -145,7 +121,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = (props) => {
             <View className="flex-row justify-center items-center mt-4">
               <Text className="text-slate-400 text-xs">Hesabınız yok mu? </Text>
               <TouchableOpacity
-                onPress={handleNavigateRegister}
+                onPress={onNavigateToRegister}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 activeOpacity={0.7}
               >

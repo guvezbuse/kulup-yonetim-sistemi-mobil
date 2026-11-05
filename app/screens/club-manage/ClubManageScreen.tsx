@@ -1,6 +1,8 @@
-import React, { useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { Card } from "../../components/Card";
+import { membershipService } from "../../services/membershipService";
+import { useAuthStore } from "../../store/authStore";
 
 // Alt Ekranlar
 import EditClubInfoScreen from "./EditClubInfoScreen";
@@ -17,7 +19,54 @@ interface ClubManageScreenProps {
 type ActiveTab = "menu" | "edit-info" | "events" | "announcements" | "members";
 
 export default function ClubManageScreen({ clubId, clubName, onBack }: ClubManageScreenProps) {
+  const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
   const [activeTab, setActiveTab] = useState<ActiveTab>("menu");
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+
+  // Yönetim ekranı yalnızca sistem admini veya o kulübün aktif yöneticisi tarafından açılabilir.
+  useEffect(() => {
+    let active = true;
+
+    const checkAuthorization = async () => {
+      if (profile?.is_admin === true) {
+        if (active) setAuthorized(true);
+        return;
+      }
+      if (!user) {
+        if (active) setAuthorized(false);
+        return;
+      }
+      try {
+        const isManager = await membershipService.isClubManager(clubId, user.uid);
+        if (active) setAuthorized(isManager);
+      } catch {
+        if (active) setAuthorized(false);
+      }
+    };
+
+    checkAuthorization();
+    return () => {
+      active = false;
+    };
+  }, [clubId, user, profile]);
+
+  useEffect(() => {
+    if (authorized === false) {
+      Alert.alert("Erişim Engellendi", "Bu kulübü yönetme yetkiniz bulunmuyor.");
+      onBack();
+    }
+  }, [authorized, onBack]);
+
+  if (authorized === null) {
+    return (
+      <View className="flex-1 bg-slate-900 justify-center items-center">
+        <ActivityIndicator size="large" color="#6366f1" />
+      </View>
+    );
+  }
+
+  if (!authorized) return null;
 
   if (activeTab === "edit-info") {
     return (

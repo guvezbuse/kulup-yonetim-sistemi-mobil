@@ -1,1 +1,17 @@
-node_modules
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# local env files
+.env
+.env*.local
+
+# builds
+*.tsbuildinfo
+
+# macOS
+.DS_Store

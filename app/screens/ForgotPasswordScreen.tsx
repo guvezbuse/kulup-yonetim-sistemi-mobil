@@ -12,23 +12,21 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useAuthStore } from "../store/authStore";
+import { getErrorCode, getErrorMessage } from "../lib/errors";
 
 export interface ForgotPasswordScreenProps {
   onNavigateToLogin: () => void;
-  onNavigateLogin?: () => void;
 }
 
 export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   onNavigateToLogin,
-  onNavigateLogin,
 }) => {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const resetPassword = useAuthStore((state) => state.resetPassword);
 
   const handleBackToLogin = () => {
-    if (onNavigateToLogin) onNavigateToLogin();
-    else if (onNavigateLogin) onNavigateLogin();
+    onNavigateToLogin();
   };
 
   const handleResetPassword = async () => {
@@ -46,14 +44,15 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
         "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi. Lütfen gelen kutunuzu (ve spam klasörünü) kontrol edin.",
         [{ text: "Tamam", onPress: handleBackToLogin }],
       );
-    } catch (error: any) {
+    } catch (error) {
+      const code = getErrorCode(error);
       let msg = "İşlem sırasında bir hata oluştu.";
-      if (error.code === "auth/user-not-found") {
+      if (code === "auth/user-not-found") {
         msg = "Bu e-posta adresine ait bir hesap bulunamadı.";
-      } else if (error.code === "auth/invalid-email") {
+      } else if (code === "auth/invalid-email") {
         msg = "Geçersiz e-posta adresi girdiniz.";
-      } else if (error.message) {
-        msg = error.message;
+      } else {
+        msg = getErrorMessage(error, msg);
       }
       Alert.alert("Hata", msg);
     } finally {

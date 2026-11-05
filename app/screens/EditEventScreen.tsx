@@ -8,104 +8,87 @@ import {
   ActivityIndicator,
   BackHandler,
 } from "react-native";
-import {
-  doc,
-  getDoc,
-  updateDoc,
-  Timestamp,
-  collection,
-  getDocs,
-  query,
-  where,
-} from "firebase/firestore";
-import { db } from "../lib/firebase";
-import { useAuthStore } from "../store/authStore";
+import { Timestamp } from "firebase/firestore";
+import { getEventById, updateEvent } from "../services/eventService";
+import { EVENT_STATUS, EventStatus, TARGET_AUDIENCE, TargetAudience } from "../types";
 
 interface EditEventScreenProps {
   onBack?: () => void;
-  navigation?: any;
-  route?: any;
+  navigation?: {
+    goBack?: () => void;
+  };
+  route?: {
+    params?: {
+      eventId?: string;
+    };
+  };
 }
 
+const AUDIENCE_OPTIONS: { label: string; value: TargetAudience }[] = [
+  { label: "Genel", value: TARGET_AUDIENCE.EVERYONE },
+  { label: "Admin", value: TARGET_AUDIENCE.ALL_ADMINS },
+  { label: "Yönetici", value: TARGET_AUDIENCE.ALL_MANAGERS },
+];
+
 export default function EditEventScreen({ onBack, navigation, route }: EditEventScreenProps) {
-  const { user } = useAuthStore();
   const eventId = route?.params?.eventId;
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [dateInput, setDateInput] = useState("");
-  const [quota, setQuota] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all");
-  const [status, setStatus] = useState<"yayinlanan" | "taslak">("yayinlanan");
+  const [baslik, setBaslik] = useState("");
+  const [aciklama, setAciklama] = useState("");
+  const [konum, setKonum] = useState("");
+  const [tarihGirdi, setTarihGirdi] = useState("");
+  const [kontenjan, setKontenjan] = useState("");
+  const [gorselUrl, setGorselUrl] = useState("");
+  const [hedefKitle, setHedefKitle] = useState<TargetAudience>(TARGET_AUDIENCE.EVERYONE);
+  const [status, setStatus] = useState<EventStatus>(EVENT_STATUS.PUBLISHED);
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [clubId, setClubId] = useState<string>("");
-  const [managedClubs, setManagedClubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Kullanıcı rollerini, kulüpleri ve düzenlenecek etkinliğin verilerini çek
   useEffect(() => {
-    const initData = async () => {
-      if (!user) return;
+    const loadEvent = async () => {
+      if (!eventId) {
+        Alert.alert("Hata", "Etkinlik bulunamadı.");
+        setLoading(false);
+        return;
+      }
+
       try {
-        // 1. Admin kontrolü
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        const userData = userDoc.exists() ? userDoc.data() : null;
-        const adminFlag = userData?.is_admin === true || userData?.role === "admin";
-        setIsAdmin(!!adminFlag);
+        const event = await getEventById(eventId);
+        if (!event) {
+          Alert.alert("Hata", "Etkinlik bulunamadı.");
+          return;
+        }
 
-        // 2. Yönetilen kulüpleri çek
-        const clubsRef = collection(db, "clubs");
-        const q1 = query(clubsRef, where("yonetici_uid", "==", user.uid));
-        const q2 = query(clubsRef, where("managerId", "==", user.uid));
-        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+        setBaslik(event.baslik || "");
+        setAciklama(event.aciklama || "");
+        setKonum(event.konum || "");
+        setGorselUrl(event.gorselUrl || "");
+        setHedefKitle(event.hedef_kitle || TARGET_AUDIENCE.EVERYONE);
+        setStatus(event.status || EVENT_STATUS.PUBLISHED);
+        setKontenjan(event.kontenjan !== null && event.kontenjan !== undefined ? String(event.kontenjan) : "");
 
-        const clubsMap = new Map();
-        [...snap1.docs, ...snap2.docs].forEach((docSnap) => {
-          clubsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-        });
-        setManagedClubs(Array.from(clubsMap.values()));
-
-        // 3. Etkinlik verisini çek ve form state'lerini doldur
-        if (eventId) {
-          const eventDocRef = doc(db, "events", eventId);
-          const eventSnap = await getDoc(eventDocRef);
-          if (eventSnap.exists()) {
-            const data = eventSnap.data();
-            setTitle(data.title || "");
-            setDescription(data.description || "");
-            setLocation(data.location || "");
-            setImageUrl(data.imageUrl || "");
-            setTargetAudience(data.targetAudience || "all");
-            setStatus(data.status || "yayinlanan");
-            setClubId(data.clubId || "");
-            setQuota(data.quota ? data.quota.toString() : "");
-
-            // Timestamp'i okunabilir string tarih formatına çevir
-            if (data.date && data.date.seconds) {
-              const d = new Date(data.date.seconds * 1000);
-              const pad = (n: number) => n.toString().padStart(2, "0");
-              setDateInput(
-                `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
-              );
-            }
-          }
+        if (event.tarih) {
+          const d =
+            typeof event.tarih === "string"
+              ? new Date(event.tarih.replace(" ", "T"))
+              : new Date(event.tarih.seconds * 1000);
+          const pad = (n: number) => n.toString().padStart(2, "0");
+          setTarihGirdi(
+            `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+          );
         }
       } catch (error) {
-        console.log("Veri yükleme hatası:", error);
+        console.log("Etkinlik yükleme hatası:", error);
         Alert.alert("Hata", "Etkinlik bilgileri yüklenemedi.");
       } finally {
         setLoading(false);
       }
     };
 
-    initData();
-  }, [user, eventId]);
+    loadEvent();
+  }, [eventId]);
 
-  // Donanımsal Geri Tuşu Desteği
   useEffect(() => {
     const backAction = () => {
       handleGoBack();
@@ -143,12 +126,14 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
   };
 
   const handleUpdate = async () => {
-    if (!title.trim() || !description.trim() || !location.trim() || !dateInput.trim()) {
+    if (!eventId) return;
+
+    if (!baslik.trim() || !aciklama.trim() || !konum.trim() || !tarihGirdi.trim()) {
       Alert.alert("Hata", "Lütfen tüm zorunlu alanları doldurun.");
       return;
     }
 
-    const eventDateObj = convertToDateObject(dateInput);
+    const eventDateObj = convertToDateObject(tarihGirdi);
     if (!eventDateObj) {
       Alert.alert("Hatalı Tarih", "Örn format: 15.11.2026 14:30");
       return;
@@ -156,26 +141,17 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
 
     try {
       setSaving(true);
-      const eventRef = doc(db, "events", eventId);
-
-      const updatePayload: Record<string, any> = {
-        title: title.trim(),
-        description: description.trim(),
-        location: location.trim(),
-        date: Timestamp.fromDate(eventDateObj),
-        targetAudience,
-        imageUrl: imageUrl.trim(),
+      await updateEvent(eventId, {
+        baslik: baslik.trim(),
+        aciklama: aciklama.trim(),
+        konum: konum.trim(),
+        tarih: Timestamp.fromDate(eventDateObj),
+        kontenjan: kontenjan.trim() ? parseInt(kontenjan, 10) : null,
+        gorselUrl: gorselUrl.trim(),
+        hedef_kitle: hedefKitle,
         status,
-        clubId: clubId || null,
-      };
+      });
 
-      if (quota.trim()) {
-        updatePayload.quota = parseInt(quota, 10);
-      } else {
-        updatePayload.quota = null;
-      }
-
-      await updateDoc(eventRef, updatePayload);
       Alert.alert("Başarılı", "Etkinlik başarıyla güncellendi.");
       handleGoBack();
     } catch (error) {
@@ -196,7 +172,6 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
 
   return (
     <View className="flex-1 bg-slate-900 p-3 justify-between">
-      {/* Üst Başlık ve Geri Dön */}
       <View className="flex-row justify-between items-center mb-1">
         <TouchableOpacity onPress={handleGoBack}>
           <Text className="text-indigo-400 font-semibold text-xs">← Geri Dön</Text>
@@ -205,22 +180,17 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Kompakt Form Alanları */}
       <View className="space-y-1.5">
         {/* Hedef Kitle */}
         <View>
           <Text className="text-slate-300 text-[11px] font-semibold mb-0.5">Hedef Kitle</Text>
           <View className="flex-row gap-1">
-            {[
-              { label: "Genel", value: "all" },
-              { label: "Admin", value: "admin" },
-              { label: "Yönetici", value: "club_manager" },
-            ].map((item) => (
+            {AUDIENCE_OPTIONS.map((item) => (
               <TouchableOpacity
                 key={item.value}
-                onPress={() => setTargetAudience(item.value as any)}
+                onPress={() => setHedefKitle(item.value)}
                 className={`flex-1 py-1 px-2 rounded border items-center ${
-                  targetAudience === item.value
+                  hedefKitle === item.value
                     ? "bg-indigo-600 border-indigo-500"
                     : "bg-slate-800 border-slate-700"
                 }`}
@@ -234,9 +204,9 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
         {/* Durum (Yayınla / Taslak) */}
         <View className="flex-row gap-1.5">
           <TouchableOpacity
-            onPress={() => setStatus("yayinlanan")}
+            onPress={() => setStatus(EVENT_STATUS.PUBLISHED)}
             className={`flex-1 py-1 rounded border items-center ${
-              status === "yayinlanan"
+              status === EVENT_STATUS.PUBLISHED
                 ? "bg-emerald-600 border-emerald-500"
                 : "bg-slate-800 border-slate-700"
             }`}
@@ -244,9 +214,9 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
             <Text className="text-white text-[11px] font-semibold">Yayınla</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => setStatus("taslak")}
+            onPress={() => setStatus(EVENT_STATUS.DRAFT)}
             className={`flex-1 py-1 rounded border items-center ${
-              status === "taslak"
+              status === EVENT_STATUS.DRAFT
                 ? "bg-amber-600 border-amber-500"
                 : "bg-slate-800 border-slate-700"
             }`}
@@ -255,13 +225,13 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
           </TouchableOpacity>
         </View>
 
-        {/* Başlık ve Konum Yan Yana */}
+        {/* Başlık ve Konum */}
         <View className="flex-row gap-1.5">
           <View className="flex-1">
             <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Başlık *</Text>
             <TextInput
-              value={title}
-              onChangeText={setTitle}
+              value={baslik}
+              onChangeText={setBaslik}
               placeholder="Etkinlik adı"
               placeholderTextColor="#64748b"
               className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
@@ -270,8 +240,8 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
           <View className="flex-1">
             <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Konum *</Text>
             <TextInput
-              value={location}
-              onChangeText={setLocation}
+              value={konum}
+              onChangeText={setKonum}
               placeholder="Salon A"
               placeholderTextColor="#64748b"
               className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
@@ -283,8 +253,8 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
         <View>
           <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Açıklama *</Text>
           <TextInput
-            value={description}
-            onChangeText={setDescription}
+            value={aciklama}
+            onChangeText={setAciklama}
             placeholder="Etkinlik detayları..."
             placeholderTextColor="#64748b"
             className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs h-10"
@@ -292,15 +262,15 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
           />
         </View>
 
-        {/* Tarih ve Kontenjan Yan Yana */}
+        {/* Tarih ve Kontenjan */}
         <View className="flex-row gap-1.5">
           <View className="flex-[2]">
             <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">
               Tarih (GG.AA.YYYY SS:DD) *
             </Text>
             <TextInput
-              value={dateInput}
-              onChangeText={setDateInput}
+              value={tarihGirdi}
+              onChangeText={setTarihGirdi}
               placeholder="15.11.2026 14:30"
               placeholderTextColor="#64748b"
               className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
@@ -309,8 +279,8 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
           <View className="flex-1">
             <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Kontenjan</Text>
             <TextInput
-              value={quota}
-              onChangeText={setQuota}
+              value={kontenjan}
+              onChangeText={setKontenjan}
               keyboardType="numeric"
               placeholder="Sınırsız"
               placeholderTextColor="#64748b"
@@ -325,8 +295,8 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
             Görsel URL (Opsiyonel)
           </Text>
           <TextInput
-            value={imageUrl}
-            onChangeText={setImageUrl}
+            value={gorselUrl}
+            onChangeText={setGorselUrl}
             placeholder="https://..."
             placeholderTextColor="#64748b"
             className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
@@ -334,7 +304,6 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
         </View>
       </View>
 
-      {/* Güncelle Butonu */}
       <TouchableOpacity
         onPress={handleUpdate}
         disabled={saving}

@@ -5,16 +5,16 @@ import { Input } from "../components/Input";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { useAuthStore } from "../store/authStore";
+import { getErrorCode, getErrorMessage } from "../lib/errors";
 
 interface RegisterScreenProps {
-  onNavigateToLogin?: () => void;
-  onNavigateLogin?: () => void;
+  onNavigateToLogin: () => void;
   onRegisterSuccess?: () => void;
 }
 
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onNavigateToLogin,
-  onNavigateLogin,
+  onRegisterSuccess,
 }) => {
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
@@ -25,13 +25,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
   const register = useAuthStore((state) => state.register);
 
-  // Her iki isimlendirmeyi de destekleyecek şekilde yönlendirme fonksiyonu:
   const handleGoToLogin = () => {
-    if (onNavigateToLogin) {
-      onNavigateToLogin();
-    } else if (onNavigateLogin) {
-      onNavigateLogin();
-    }
+    onNavigateToLogin();
   };
 
   const handleRegister = async () => {
@@ -47,26 +42,28 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
     setLoading(true);
     try {
       await register({
-        name: name.trim(),
-        surname: surname.trim(),
+        ad: name.trim(),
+        soyad: surname.trim(),
         email: email.trim(),
-        phone: phone.trim(),
+        telefon: phone.trim(),
         pass: password,
       });
       Alert.alert("Başarılı", "Hesabınız başarıyla oluşturuldu!");
-    } catch (err: any) {
+      onRegisterSuccess?.();
+    } catch (err) {
       console.log("Firebase Kayıt Hatası:", err);
-      let msg = err.message || "Kayıt işlemi başarısız.";
-      if (err.code === "auth/email-already-in-use") {
+      const code = getErrorCode(err);
+      let msg = getErrorMessage(err, "Kayıt işlemi başarısız.");
+      if (code === "auth/email-already-in-use") {
         msg = "Bu e-posta adresi zaten kullanımda.";
-      } else if (err.code === "auth/invalid-email") {
+      } else if (code === "auth/invalid-email") {
         msg = "Geçersiz e-posta adresi formatı.";
-      } else if (err.code === "auth/network-request-failed") {
+      } else if (code === "auth/network-request-failed") {
         msg = "Ağ hatası. İnternet bağlantınızı kontrol edin.";
-      } else if (err.code === "auth/api-key-not-valid") {
+      } else if (code === "auth/api-key-not-valid") {
         msg = "Firebase API anahtarı geçersiz veya bulunamadı.";
       }
-      Alert.alert("Kayıt Hatası", `${msg}\n[Kod: ${err.code || "yok"}]`);
+      Alert.alert("Kayıt Hatası", `${msg}\n[Kod: ${code || "yok"}]`);
     } finally {
       setLoading(false);
     }

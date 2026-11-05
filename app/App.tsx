@@ -2,26 +2,29 @@ import "./global.css";
 import React, { useState, useEffect } from "react";
 import { View, Text, StatusBar, TouchableOpacity, BackHandler, Alert, LogBox } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "./lib/firebase";
 
 import { LoginScreen } from "./screens/LoginScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
 import ClubsScreen from "./screens/ClubsScreen";
 import CreateEventScreen from "./screens/admin/CreateEventScreen";
+import EditEventScreen from "./screens/EditEventScreen";
 import ClubManageScreen from "./screens/club-manage/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import MemberIdCardScreen from "./screens/MemberIdCardScreen";
 import EventsScreen from "./screens/EventsScreen";
 import NotificationsScreen from "./screens/NotificationsScreen";
+import ManageUsersScreen from "./screens/admin/ManageUsersScreen";
+import { useAuthStore } from "./store/authStore";
 import type { Club } from "./types";
 import { notificationService } from "./services/notificationService";
 
 LogBox.ignoreAllLogs(true);
 LogBox.ignoreLogs(["expo-notifications: Android Push notifications functionality"]);
+
+const AUTH_SCREENS = ["login", "register", "forgot-password"];
 
 type ScreenType =
   | "login"
@@ -29,47 +32,48 @@ type ScreenType =
   | "forgot-password"
   | "accept-invite"
   | "profile"
+  | "id-card"
   | "clubs"
   | "announcements"
   | "events"
   | "create-event"
+  | "edit-event"
   | "notifications"
+  | "manage-users"
   | "manage-club"
   | "club-detail";
 
 export default function App() {
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>(["login"]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string>("");
+
+  const user = useAuthStore((state) => state.user);
+  const initializeAuthListener = useAuthStore((state) => state.initializeAuthListener);
+  const logout = useAuthStore((state) => state.logout);
 
   const currentScreen = screenHistory[screenHistory.length - 1];
 
-  // Auth durumu ve Admin kontrolü
+  // Oturum dinleyicisini bağla; user/profile tek kaynaktan senkron kalsın
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        // Cihazın bildirim tokenını al ve users tablosuna kaydet
-        notificationService.registerForPushNotificationsAsync(currentUser.uid);
-
-        try {
-          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          if (userDoc.exists() && userDoc.data().is_admin === true) {
-            setIsAdmin(true);
-          } else {
-            setIsAdmin(false);
-          }
-        } catch {
-          setIsAdmin(false);
-        }
-      } else {
-        setIsAdmin(false);
-      }
-    });
-
+    const unsubscribe = initializeAuthListener();
     return () => unsubscribe();
-  }, []);
+  }, [initializeAuthListener]);
+
+  // Bildirim tokenı yalnızca oturum açıldığında kaydedilir
+  useEffect(() => {
+    if (!user) return;
+    notificationService.registerForPushNotificationsAsync(user.uid);
+  }, [user]);
+
+  // Oturum durumuna göre başlangıç ekranını eşitle
+  useEffect(() => {
+    if (user && AUTH_SCREENS.includes(currentScreen)) {
+      setScreenHistory(["clubs"]);
+    } else if (!user && !AUTH_SCREENS.includes(currentScreen) && currentScreen !== "accept-invite") {
+      setScreenHistory(["login"]);
+    }
+  }, [user, currentScreen]);
 
   const navigateTo = (screen: ScreenType) => {
     if (currentScreen === screen) return;
@@ -102,7 +106,7 @@ export default function App() {
         style: "destructive",
         onPress: async () => {
           try {
-            await signOut(auth);
+            await logout();
           } catch (e) {
             console.log("Çıkış hatası:", e);
           }
@@ -137,9 +141,15 @@ export default function App() {
               paddingVertical: 6,
               paddingHorizontal: 8,
               borderRadius: 8,
-              backgroundColor: currentScreen === "profile" ? "#4f46e5" : "#0f172a",
+              backgroundColor:
+                currentScreen === "profile" || currentScreen === "manage-users"
+                  ? "#4f46e5"
+                  : "#0f172a",
               borderWidth: 1,
-              borderColor: currentScreen === "profile" ? "#6366f1" : "#1e293b",
+              borderColor:
+                currentScreen === "profile" || currentScreen === "manage-users"
+                  ? "#6366f1"
+                  : "#1e293b",
               alignItems: "center",
               justifyContent: "center",
             }}
@@ -200,12 +210,16 @@ export default function App() {
               paddingVertical: 7,
               borderRadius: 8,
               backgroundColor:
-                currentScreen === "events" || currentScreen === "create-event"
+                currentScreen === "events" ||
+                currentScreen === "create-event" ||
+                currentScreen === "edit-event"
                   ? "#7c3aed"
                   : "#0f172a",
               borderWidth: 1,
               borderColor:
-                currentScreen === "events" || currentScreen === "create-event"
+                currentScreen === "events" ||
+                currentScreen === "create-event" ||
+                currentScreen === "edit-event"
                   ? "#8b5cf6"
                   : "#1e293b",
               alignItems: "center",
@@ -258,24 +272,12 @@ export default function App() {
             onNavigateToRegister={() => navigateTo("register")}
             onNavigateToForgotPassword={() => navigateTo("forgot-password")}
             onNavigateToAcceptInvite={() => navigateTo("accept-invite")}
-            {...({
-              onNavigateAcceptInvite: () => navigateTo("accept-invite"),
-              onAcceptInvite: () => navigateTo("accept-invite"),
-              onNavigateToInviteAccept: () => navigateTo("accept-invite"),
-            } as any)}
             onLoginSuccess={handleLoginSuccess}
           />
         )}
 
         {currentScreen === "register" && (
-          <RegisterScreen
-            onNavigateToLogin={goBack}
-            {...({
-              onRegisterSuccess: handleLoginSuccess,
-              onSuccess: handleLoginSuccess,
-              onRegister: handleLoginSuccess,
-            } as any)}
-          />
+          <RegisterScreen onNavigateToLogin={goBack} onRegisterSuccess={handleLoginSuccess} />
         )}
 
         {currentScreen === "forgot-password" && <ForgotPasswordScreen onNavigateToLogin={goBack} />}
@@ -284,7 +286,16 @@ export default function App() {
           <InviteAcceptScreen onSuccess={goBack} onCancel={goBack} />
         )}
 
-        {currentScreen === "profile" && <ProfileScreen />}
+        {currentScreen === "profile" && (
+          <ProfileScreen
+            onOpenManageUsers={() => navigateTo("manage-users")}
+            onOpenIdCard={() => navigateTo("id-card")}
+          />
+        )}
+
+        {currentScreen === "id-card" && <MemberIdCardScreen onBack={goBack} />}
+
+        {currentScreen === "manage-users" && <ManageUsersScreen onBack={goBack} />}
 
         {currentScreen === "clubs" && (
           <ClubsScreen
@@ -307,9 +318,12 @@ export default function App() {
         {currentScreen === "events" && (
           <EventsScreen
             navigation={{
-              navigate: (screen: string) => {
+              navigate: (screen: string, params?: Record<string, unknown>) => {
                 if (screen === "CreateEvent") {
                   navigateTo("create-event");
+                } else if (screen === "EditEventScreen") {
+                  setEditingEventId(String(params?.eventId || ""));
+                  navigateTo("edit-event");
                 }
               },
             }}
@@ -318,6 +332,15 @@ export default function App() {
 
         {currentScreen === "create-event" && (
           <CreateEventScreen
+            navigation={{
+              goBack: goBack,
+            }}
+          />
+        )}
+
+        {currentScreen === "edit-event" && (
+          <EditEventScreen
+            route={{ params: { eventId: editingEventId } }}
             navigation={{
               goBack: goBack,
             }}

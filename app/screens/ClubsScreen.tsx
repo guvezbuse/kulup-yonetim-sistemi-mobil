@@ -12,7 +12,8 @@ import {
 import { Card } from "../components/Card";
 import { clubService } from "../services/clubService";
 import { useAuthStore } from "../store/authStore";
-import { Club } from "../types";
+import { getErrorMessage } from "../lib/errors";
+import { CLUB_STATUS, Club } from "../types";
 import CreateClubModal from "./club-manage/CreateClubModal";
 
 interface ClubsScreenProps {
@@ -40,7 +41,7 @@ export default function ClubsScreen({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Sistem Yöneticisi (Admin) Kontrolü
-  const isSystemAdmin = Boolean(profile?.is_admin) || profile?.role === "admin";
+  const isSystemAdmin = Boolean(profile?.is_admin);
 
   useEffect(() => {
     loadClubs();
@@ -73,7 +74,7 @@ export default function ClubsScreen({
   };
 
   const handleToggleClubStatus = async (club: Club) => {
-    const hedefDurum = club.durum === "aktif" ? "pasif" : "aktif";
+    const hedefDurum = club.durum === CLUB_STATUS.ACTIVE ? CLUB_STATUS.PASSIVE : CLUB_STATUS.ACTIVE;
     Alert.alert(
       "Kulüp Durumu Değiştir",
       `"${club.ad}" kulübünü ${hedefDurum.toUpperCase()} yapmak istediğinize emin misiniz?`,
@@ -86,8 +87,8 @@ export default function ClubsScreen({
               await clubService.toggleClubStatus(club.id, club.durum);
               Alert.alert("Başarılı", "Kulüp durumu güncellendi.");
               loadClubs();
-            } catch (err: any) {
-              Alert.alert("Hata", err.message || "İşlem gerçekleştirilemedi.");
+            } catch (err) {
+              Alert.alert("Hata", getErrorMessage(err, "İşlem gerçekleştirilemedi."));
             }
           },
         },
@@ -96,7 +97,7 @@ export default function ClubsScreen({
   };
 
   const renderClubCard = ({ item }: { item: Club }) => {
-    const bannerUrl = item.gorselUrl || item.imageUrl || DEFAULT_BANNER;
+    const bannerUrl = item.gorselUrl || DEFAULT_BANNER;
 
     return (
       <TouchableOpacity onPress={() => onSelectClub(item)} activeOpacity={0.8} className="mb-4">
@@ -107,7 +108,7 @@ export default function ClubsScreen({
             <View className="absolute top-2 right-2 bg-slate-900/80 px-2 py-1 rounded-md">
               <Text
                 className={`text-[10px] font-bold ${
-                  item.durum === "pasif" ? "text-rose-400" : "text-emerald-400"
+                  item.durum === CLUB_STATUS.PASSIVE ? "text-rose-400" : "text-emerald-400"
                 }`}
               >
                 {item.durum ? item.durum.toUpperCase() : "AKTİF"}
@@ -130,17 +131,17 @@ export default function ClubsScreen({
                     handleToggleClubStatus(item);
                   }}
                   className={`px-3 py-1.5 rounded-lg border ${
-                    item.durum === "pasif"
+                    item.durum === CLUB_STATUS.PASSIVE
                       ? "border-emerald-500/50 bg-emerald-950/30"
                       : "border-rose-500/50 bg-rose-950/30"
                   }`}
                 >
                   <Text
                     className={`text-xs font-semibold ${
-                      item.durum === "pasif" ? "text-emerald-400" : "text-rose-400"
+                      item.durum === CLUB_STATUS.PASSIVE ? "text-emerald-400" : "text-rose-400"
                     }`}
                   >
-                    {item.durum === "pasif" ? "Aktif Et" : "Pasife Al"}
+                    {item.durum === CLUB_STATUS.PASSIVE ? "Aktif Et" : "Pasife Al"}
                   </Text>
                 </TouchableOpacity>
 

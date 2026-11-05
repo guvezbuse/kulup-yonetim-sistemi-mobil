@@ -10,10 +10,17 @@ import {
 } from "react-native";
 import { Input } from "../../components/Input";
 import { Card } from "../../components/Card";
-import * as eventService from "../../services/eventService";
+import {
+  createEvent,
+  deleteEvent,
+  getClubEvents,
+  getEventApplications,
+} from "../../services/eventService";
 import { notificationService } from "../../services/notificationService";
 import { useAuthStore } from "../../store/authStore";
+import { getErrorMessage } from "../../lib/errors";
 import { Timestamp } from "firebase/firestore";
+import { EVENT_STATUS, Event, EventApplication, TARGET_AUDIENCE } from "../../types";
 
 interface Props {
   clubId: string;
@@ -24,7 +31,7 @@ interface Props {
 export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Props) {
   const user = useAuthStore((state) => state.user);
 
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
 
   const [eventTitle, setEventTitle] = useState("");
@@ -34,7 +41,7 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
   const [eventQuota, setEventQuota] = useState("");
   const [eventCreating, setEventCreating] = useState(false);
 
-  const [selectedEventApps, setSelectedEventApps] = useState<any[]>([]);
+  const [selectedEventApps, setSelectedEventApps] = useState<EventApplication[]>([]);
   const [appModalVisible, setAppModalVisible] = useState(false);
   const [selectedEventTitle, setSelectedEventTitle] = useState("");
   const [loadingApps, setLoadingApps] = useState(false);
@@ -71,15 +78,8 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
   const loadEvents = async () => {
     try {
       setLoadingEvents(true);
-      const getClubEventsFn =
-        (eventService as any).getEventsByClub ||
-        (eventService as any).getEvents ||
-        (eventService as any).getAllEvents;
-
-      if (getClubEventsFn) {
-        const eventData = await getClubEventsFn(clubId);
-        setEvents(eventData || []);
-      }
+      const eventData = await getClubEvents(clubId);
+      setEvents(eventData);
     } catch (e) {
       console.log("Etkinlik yükleme hatası:", e);
     } finally {
@@ -108,39 +108,23 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
 
     setEventCreating(true);
     try {
-      const createFn = (eventService as any).createEvent || (eventService as any).addEvent;
-
-      const payload: Record<string, any> = {
-        clubId: clubId,
+      const payload: Omit<Event, "id"> = {
         club_id: clubId,
-        kulup_id: clubId,
-        clubName: clubName,
         club_ad: clubName,
-        kulup_adi: clubName,
-        title: eventTitle.trim(),
         baslik: eventTitle.trim(),
-        description: eventDesc.trim(),
         aciklama: eventDesc.trim(),
-        location: eventLocation.trim(),
         konum: eventLocation.trim(),
-        // Firestore Timestamp Nesnesi
-        eventDate: Timestamp.fromDate(eventDateObj),
-        date: Timestamp.fromDate(eventDateObj),
         tarih: Timestamp.fromDate(eventDateObj),
-        createdBy: user?.uid || "manager",
-        status: asDraft ? "taslak" : "yayinlandi",
-        targetAudience: "all",
+        kontenjan: eventQuota.trim() ? parseInt(eventQuota, 10) : null,
+        gorselUrl: "",
+        hedef_kitle: TARGET_AUDIENCE.CLUB_MEMBERS,
+        olusturan_id: user?.uid || "",
+        status: asDraft ? EVENT_STATUS.DRAFT : EVENT_STATUS.PUBLISHED,
+        katilimcilar: [],
         createdAt: Timestamp.now(),
-        participants: [],
-        attendees: [],
       };
 
-      if (eventQuota.trim()) {
-        payload.quota = parseInt(eventQuota, 10);
-        payload.kontenjan = parseInt(eventQuota, 10);
-      }
-
-      await createFn(payload);
+      await createEvent(payload);
 
       if (!asDraft) {
         try {
@@ -157,8 +141,8 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
       setEventLocation("");
       setEventQuota("");
       loadEvents();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Etkinlik oluşturulamadı.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "Etkinlik oluşturulamadı."));
     } finally {
       setEventCreating(false);
     }
@@ -172,12 +156,8 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
         style: "destructive",
         onPress: async () => {
           try {
-            const deleteFn =
-              (eventService as any).deleteEvent || (eventService as any).deleteEventById;
-            if (deleteFn) {
-              await deleteFn(eventId);
-              loadEvents();
-            }
+            await deleteEvent(eventId);
+            loadEvents();
           } catch (err) {
             Alert.alert("Hata", "Etkinlik silinemedi.");
           }
@@ -191,13 +171,8 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
     setLoadingApps(true);
     setAppModalVisible(true);
     try {
-      const getAppsFn = (eventService as any).getEventApplications;
-      if (getAppsFn) {
-        const data = await getAppsFn(eventId);
-        setSelectedEventApps(data || []);
-      } else {
-        setSelectedEventApps([]);
-      }
+      const data = await getEventApplications(eventId);
+      setSelectedEventApps(data);
     } catch (e) {
       Alert.alert("Hata", "Başvurular çekilemedi.");
     } finally {
@@ -280,9 +255,9 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
         <ActivityIndicator color="#8b5cf6" />
       ) : (
         events.map((ev, idx) => {
-          const title = ev.baslik || ev.title || ev.name || "İsimsiz Etkinlik";
-          const desc = ev.aciklama || ev.description || ev.details || "";
-          const status = ev.durum || ev.status || "yayinlandi";
+          const title = ev.baslik || "İsimsiz Etkinlik";
+          const desc = ev.aciklama || "";
+          const status = ev.status;
 
           return (
             <View
@@ -333,20 +308,13 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
               <ScrollView>
                 {selectedEventApps.map((app, index) => (
                   <View
-                    key={app.id || index.toString()}
+                    key={app.user_id}
                     className="bg-slate-900 p-3 rounded-xl mb-2 border border-slate-700"
                   >
                     <Text className="text-white font-bold text-xs">
-                      #{index + 1} {app.user_name || app.userName || "Kullanıcı"}
+                      #{index + 1} {app.ad_soyad || "Kullanıcı"}
                     </Text>
-                    <Text className="text-slate-400 text-[10px]">
-                      {app.user_email || app.userEmail || ""}
-                    </Text>
-                    {!!(app.mesaj || app.message) && (
-                      <Text className="text-slate-300 text-xs mt-1 italic">
-                        "{app.mesaj || app.message}"
-                      </Text>
-                    )}
+                    <Text className="text-slate-400 text-[10px]">{app.email}</Text>
                   </View>
                 ))}
               </ScrollView>

@@ -11,23 +11,16 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { notificationService } from "./notificationService";
+import {
+  ANNOUNCEMENT_SCOPE,
+  Announcement,
+  MEMBERSHIP_STATUS,
+  TARGET_AUDIENCE,
+  TargetAudience,
+  isClubManagerRole,
+} from "../types";
 
-export type AnnouncementScope = "sistem" | "kulup";
-export type AnnouncementTarget =
-  "tum_yoneticiler" | "tum_uyeler" | "kulup_uyeleri" | "tum_adminler";
-
-export interface AnnouncementItem {
-  id: string;
-  baslik: string;
-  icerik: string;
-  yayinlayan_id: string;
-  yayinlayan_ad: string;
-  kapsam: AnnouncementScope;
-  hedef_kitle: AnnouncementTarget;
-  club_id?: string | null;
-  club_ad?: string | null;
-  tarih: string;
-}
+export type AnnouncementItem = Announcement;
 
 export const announcementService = {
   // 1. Sistem Geneli Duyuru Oluşturma (Admin)
@@ -36,7 +29,7 @@ export const announcementService = {
     icerik: string,
     adminId: string,
     adminName: string,
-    hedefKitle: "tum_yoneticiler" | "tum_uyeler" | "tum_adminler",
+    hedefKitle: TargetAudience,
   ) => {
     if (!baslik.trim() || !icerik.trim()) {
       throw new Error("Başlık ve içerik boş bırakılamaz.");
@@ -47,7 +40,7 @@ export const announcementService = {
       icerik: icerik.trim(),
       yayinlayan_id: adminId,
       yayinlayan_ad: adminName,
-      kapsam: "sistem",
+      kapsam: ANNOUNCEMENT_SCOPE.SYSTEM,
       hedef_kitle: hedefKitle,
       club_id: null,
       club_ad: null,
@@ -57,7 +50,7 @@ export const announcementService = {
 
     try {
       await notificationService.notifyAnnouncement(
-        "sistem",
+        ANNOUNCEMENT_SCOPE.SYSTEM,
         hedefKitle,
         null,
         baslik.trim(),
@@ -88,8 +81,8 @@ export const announcementService = {
       icerik: icerik.trim(),
       yayinlayan_id: managerId,
       yayinlayan_ad: managerName,
-      kapsam: "kulup",
-      hedef_kitle: "kulup_uyeleri",
+      kapsam: ANNOUNCEMENT_SCOPE.CLUB,
+      hedef_kitle: TARGET_AUDIENCE.CLUB_MEMBERS,
       club_id: clubId,
       club_ad: clubName,
       tarih: new Date().toISOString(),
@@ -98,8 +91,8 @@ export const announcementService = {
 
     try {
       await notificationService.notifyAnnouncement(
-        "kulup",
-        "kulup_uyeleri",
+        ANNOUNCEMENT_SCOPE.CLUB,
+        TARGET_AUDIENCE.CLUB_MEMBERS,
         clubId,
         baslik.trim(),
         icerik.trim(),
@@ -133,8 +126,8 @@ export const announcementService = {
           icerik: data.icerik || "",
           yayinlayan_id: data.yayinlayan_id || "",
           yayinlayan_ad: data.yayinlayan_ad || "Yönetici",
-          kapsam: data.kapsam || "kulup",
-          hedef_kitle: data.hedef_kitle || "kulup_uyeleri",
+          kapsam: (data.kapsam || ANNOUNCEMENT_SCOPE.CLUB) as AnnouncementItem["kapsam"],
+          hedef_kitle: (data.hedef_kitle || TARGET_AUDIENCE.ALL_MEMBERS) as TargetAudience,
           club_id: data.club_id || null,
           club_ad: data.club_ad || null,
           tarih: rawDate || new Date().toISOString(),
@@ -148,7 +141,7 @@ export const announcementService = {
       const mQuery = query(
         collection(db, "memberships"),
         where("user_id", "==", userId),
-        where("status", "==", "aktif"),
+        where("status", "==", MEMBERSHIP_STATUS.ACTIVE),
       );
       const mSnap = await getDocs(mQuery);
 
@@ -160,21 +153,25 @@ export const announcementService = {
         if (data.club_id) {
           activeClubIds.push(data.club_id);
         }
-        const role = (data.role || "").toLowerCase();
-        if (role === "yonetici" || role === "yönetici" || role === "baskan") {
+        const role = data.role || "";
+        if (isClubManagerRole(role)) {
           isManagerInAnyClub = true;
         }
       });
 
       const filtered = all.filter((item) => {
-        if (item.kapsam === "sistem") {
-          if (item.hedef_kitle === "tum_uyeler") return true;
-          if (item.hedef_kitle === "tum_yoneticiler" && isManagerInAnyClub) return true;
-          if (item.hedef_kitle === "tum_adminler" && isSuperAdmin) return true;
+        if (item.kapsam === ANNOUNCEMENT_SCOPE.SYSTEM) {
+          if (
+            item.hedef_kitle === TARGET_AUDIENCE.ALL_MEMBERS ||
+            item.hedef_kitle === TARGET_AUDIENCE.EVERYONE
+          )
+            return true;
+          if (item.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS && isManagerInAnyClub) return true;
+          if (item.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS && isSuperAdmin) return true;
           return false;
         }
 
-        if (item.kapsam === "kulup" && item.club_id) {
+        if (item.kapsam === ANNOUNCEMENT_SCOPE.CLUB && item.club_id) {
           return activeClubIds.includes(item.club_id);
         }
 

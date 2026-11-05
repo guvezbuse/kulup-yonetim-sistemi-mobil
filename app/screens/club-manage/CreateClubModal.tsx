@@ -4,6 +4,7 @@ import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { clubService } from "../../services/clubService";
 import { useAuthStore } from "../../store/authStore";
+import { getErrorMessage } from "../../lib/errors";
 
 interface CreateClubModalProps {
   visible: boolean;
@@ -28,7 +29,12 @@ export default function CreateClubModal({ visible, onClose, onSuccess }: CreateC
     setCreating(true);
     try {
       // clubService içerisindeki metodun imza yapısına göre çağrılıyor
-      await clubService.createClub(clubName.trim(), clubDesc.trim(), user?.uid || "admin");
+      await clubService.createClub(
+        clubName.trim(),
+        clubDesc.trim(),
+        user?.uid || "",
+        clubImage.trim(),
+      );
 
       Alert.alert("Başarılı", "Yeni kulüp başarıyla oluşturuldu.");
       setClubName("");
@@ -36,8 +42,8 @@ export default function CreateClubModal({ visible, onClose, onSuccess }: CreateC
       setClubImage("");
       onSuccess(); // Listeyi yenilemek veya modalı kapatmak için
       onClose();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Kulüp oluşturulamadı.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "Kulüp oluşturulamadı."));
     } finally {
       setCreating(false);
     }

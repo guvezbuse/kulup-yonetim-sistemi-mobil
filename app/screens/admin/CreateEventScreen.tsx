@@ -10,67 +10,79 @@ import {
   ScrollView,
 } from "react-native";
 import { createEvent } from "../../services/eventService";
+import { membershipService } from "../../services/membershipService";
 import { useAuthStore } from "../../store/authStore";
-import { Timestamp, collection, getDocs, query, where, doc, getDoc } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { Timestamp } from "firebase/firestore";
+import {
+  Club,
+  EVENT_STATUS,
+  Event,
+  EventStatus,
+  TARGET_AUDIENCE,
+  TargetAudience,
+} from "../../types";
 
 interface CreateEventScreenProps {
   onBack?: () => void;
-  navigation?: any;
-  route?: any;
+  navigation?: {
+    goBack?: () => void;
+  };
+  route?: {
+    params?: {
+      clubId?: string;
+    };
+  };
 }
 
+const AUDIENCE_OPTIONS: { label: string; value: TargetAudience }[] = [
+  { label: "Genel", value: TARGET_AUDIENCE.EVERYONE },
+  { label: "Admin", value: TARGET_AUDIENCE.ALL_ADMINS },
+  { label: "Yönetici", value: TARGET_AUDIENCE.ALL_MANAGERS },
+];
+
 export default function CreateEventScreen({ onBack, navigation, route }: CreateEventScreenProps) {
-  const { user } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [dateInput, setDateInput] = useState("");
-  const [quota, setQuota] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [targetAudience, setTargetAudience] = useState<"all" | "admin" | "club_manager">("all");
-  const [status, setStatus] = useState<"yayinlanan" | "taslak">("yayinlanan");
+  const [baslik, setBaslik] = useState("");
+  const [aciklama, setAciklama] = useState("");
+  const [konum, setKonum] = useState("");
+  const [tarihGirdi, setTarihGirdi] = useState("");
+  const [kontenjan, setKontenjan] = useState("");
+  const [gorselUrl, setGorselUrl] = useState("");
+  const [hedefKitle, setHedefKitle] = useState<TargetAudience>(TARGET_AUDIENCE.EVERYONE);
+  const [status, setStatus] = useState<EventStatus>(EVENT_STATUS.PUBLISHED);
 
-  const [isAdmin, setIsAdmin] = useState(false);
   const [clubId, setClubId] = useState<string>(route?.params?.clubId || "");
-  const [managedClubs, setManagedClubs] = useState<any[]>([]);
+  const [clubAd, setClubAd] = useState<string>("");
+  const [managedClubs, setManagedClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const isAdmin = profile?.is_admin === true;
+
   useEffect(() => {
-    const checkRolesAndClubs = async () => {
+    const loadManagedClubs = async () => {
       if (!user) return;
       try {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        const userData = userDoc.exists() ? userDoc.data() : null;
-        const adminFlag = userData?.is_admin === true || userData?.role === "admin";
-        setIsAdmin(!!adminFlag);
-
-        const clubsRef = collection(db, "clubs");
-        const q1 = query(clubsRef, where("yonetici_uid", "==", user.uid));
-        const q2 = query(clubsRef, where("managerId", "==", user.uid));
-        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-
-        const clubsMap = new Map();
-        [...snap1.docs, ...snap2.docs].forEach((docSnap) => {
-          clubsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-        });
-
-        const clubsList = Array.from(clubsMap.values());
+        const clubsList = await membershipService.getManagedClubs(user.uid);
         setManagedClubs(clubsList);
 
-        if (clubsList.length > 0 && !clubId && !adminFlag) {
+        if (clubsList.length > 0 && !clubId && !isAdmin) {
           setClubId(clubsList[0].id);
         }
       } catch (error) {
-        console.log("Rol/Kulüp yükleme hatası:", error);
+        console.log("Kulüp yükleme hatası:", error);
       }
     };
 
-    checkRolesAndClubs();
-  }, [user]);
+    loadManagedClubs();
+  }, [user, isAdmin]);
 
-  // Donanımsal Geri Tuşu Desteği
+  useEffect(() => {
+    const selected = managedClubs.find((club) => club.id === clubId);
+    setClubAd(selected?.ad || "");
+  }, [clubId, managedClubs]);
+
   useEffect(() => {
     const backAction = () => {
       handleGoBack();
@@ -108,7 +120,7 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
   };
 
   const handleCreate = async () => {
-    if (!title.trim() || !description.trim() || !location.trim() || !dateInput.trim()) {
+    if (!baslik.trim() || !aciklama.trim() || !konum.trim() || !tarihGirdi.trim()) {
       Alert.alert("Hata", "Lütfen tüm zorunlu alanları doldurun.");
       return;
     }
@@ -118,7 +130,7 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       return;
     }
 
-    const eventDateObj = convertToDateObject(dateInput);
+    const eventDateObj = convertToDateObject(tarihGirdi);
     if (!eventDateObj) {
       Alert.alert("Hatalı Tarih", "Örn format: 15.11.2026 14:30");
       return;
@@ -126,24 +138,21 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
 
     try {
       setLoading(true);
-      const eventPayload: Record<string, any> = {
-        title: title.trim(),
-        description: description.trim(),
-        location: location.trim(),
-        date: Timestamp.fromDate(eventDateObj),
-        targetAudience,
-        imageUrl: imageUrl.trim(),
-        clubId: clubId || null,
+      const eventPayload: Omit<Event, "id"> = {
+        baslik: baslik.trim(),
+        aciklama: aciklama.trim(),
+        konum: konum.trim(),
+        tarih: Timestamp.fromDate(eventDateObj),
+        kontenjan: kontenjan.trim() ? parseInt(kontenjan, 10) : null,
+        gorselUrl: gorselUrl.trim(),
+        hedef_kitle: hedefKitle,
+        club_id: clubId || null,
+        club_ad: clubAd || null,
+        olusturan_id: user?.uid || "",
         status,
-        createdBy: user?.uid || "",
+        katilimcilar: [],
         createdAt: Timestamp.now(),
-        attendees: [],
-        participants: [],
       };
-
-      if (quota.trim()) {
-        eventPayload.quota = parseInt(quota, 10);
-      }
 
       await createEvent(eventPayload);
       Alert.alert("Başarılı", "Etkinlik başarıyla oluşturuldu.");
@@ -164,16 +173,12 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       <View className="mb-3">
         <Text className="text-slate-300 text-xs font-semibold mb-1">Hedef Kitle</Text>
         <View className="flex-row gap-2">
-          {[
-            { label: "Genel", value: "all" },
-            { label: "Admin", value: "admin" },
-            { label: "Yönetici", value: "club_manager" },
-          ].map((item) => (
+          {AUDIENCE_OPTIONS.map((item) => (
             <TouchableOpacity
               key={item.value}
-              onPress={() => setTargetAudience(item.value as any)}
+              onPress={() => setHedefKitle(item.value)}
               className={`flex-1 py-2 rounded-lg border items-center ${
-                targetAudience === item.value
+                hedefKitle === item.value
                   ? "bg-indigo-600 border-indigo-500"
                   : "bg-slate-800 border-slate-700"
               }`}
@@ -187,9 +192,9 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       {/* Durum (Yayınla / Taslak) */}
       <View className="flex-row gap-2 mb-3">
         <TouchableOpacity
-          onPress={() => setStatus("yayinlanan")}
+          onPress={() => setStatus(EVENT_STATUS.PUBLISHED)}
           className={`flex-1 py-2 rounded-lg border items-center ${
-            status === "yayinlanan"
+            status === EVENT_STATUS.PUBLISHED
               ? "bg-emerald-600 border-emerald-500"
               : "bg-slate-800 border-slate-700"
           }`}
@@ -197,9 +202,11 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
           <Text className="text-white text-xs font-semibold">Yayınla</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => setStatus("taslak")}
+          onPress={() => setStatus(EVENT_STATUS.DRAFT)}
           className={`flex-1 py-2 rounded-lg border items-center ${
-            status === "taslak" ? "bg-amber-600 border-amber-500" : "bg-slate-800 border-slate-700"
+            status === EVENT_STATUS.DRAFT
+              ? "bg-amber-600 border-amber-500"
+              : "bg-slate-800 border-slate-700"
           }`}
         >
           <Text className="text-white text-xs font-semibold">Taslak</Text>
@@ -210,8 +217,8 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       <View className="mb-3">
         <Text className="text-slate-300 text-xs font-semibold mb-1">Etkinlik Başlığı *</Text>
         <TextInput
-          value={title}
-          onChangeText={setTitle}
+          value={baslik}
+          onChangeText={setBaslik}
           placeholder="Etkinlik adını girin"
           placeholderTextColor="#64748b"
           className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
@@ -221,8 +228,8 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       <View className="mb-3">
         <Text className="text-slate-300 text-xs font-semibold mb-1">Konum / Mekan *</Text>
         <TextInput
-          value={location}
-          onChangeText={setLocation}
+          value={konum}
+          onChangeText={setKonum}
           placeholder="Örn: Konferans Salonu"
           placeholderTextColor="#64748b"
           className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
@@ -233,8 +240,8 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       <View className="mb-3">
         <Text className="text-slate-300 text-xs font-semibold mb-1">Açıklama *</Text>
         <TextInput
-          value={description}
-          onChangeText={setDescription}
+          value={aciklama}
+          onChangeText={setAciklama}
           placeholder="Etkinlik detayları..."
           placeholderTextColor="#64748b"
           className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm h-20"
@@ -248,8 +255,8 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
           Tarih ve Saat * (GG.AA.YYYY SS:DD)
         </Text>
         <TextInput
-          value={dateInput}
-          onChangeText={setDateInput}
+          value={tarihGirdi}
+          onChangeText={setTarihGirdi}
           placeholder="15.11.2026 14:30"
           placeholderTextColor="#64748b"
           className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
@@ -259,8 +266,8 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
       <View className="mb-3">
         <Text className="text-slate-300 text-xs font-semibold mb-1">Kontenjan (Opsiyonel)</Text>
         <TextInput
-          value={quota}
-          onChangeText={setQuota}
+          value={kontenjan}
+          onChangeText={setKontenjan}
           keyboardType="numeric"
           placeholder="Sınırsız için boş bırakın"
           placeholderTextColor="#64748b"
@@ -274,11 +281,11 @@ export default function CreateEventScreen({ onBack, navigation, route }: CreateE
           Etkinlik Görseli URL (Opsiyonel)
         </Text>
         <TextInput
-          value={imageUrl}
-          onChangeText={setImageUrl}
+          value={gorselUrl}
+          onChangeText={setGorselUrl}
           placeholder="https://ornek.com/afis.jpg"
           placeholderTextColor="#64748b"
-          className="bg-slate-800 text-screen text-white p-3 rounded-lg border border-slate-700 text-sm"
+          className="bg-slate-800 text-white p-3 rounded-lg border border-slate-700 text-sm"
         />
       </View>
 

@@ -10,73 +10,53 @@ import {
   Image,
 } from "react-native";
 import { useAuthStore } from "../store/authStore";
-import * as eventService from "../services/eventService";
-import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { getEvents, deleteEvent, joinEvent, leaveEvent } from "../services/eventService";
+import { membershipService } from "../services/membershipService";
+import { getErrorMessage } from "../lib/errors";
+import { EVENT_STATUS, Event, TARGET_AUDIENCE } from "../types";
 
-export default function EventsScreen({ navigation }: any) {
-  const { user } = useAuthStore();
+interface EventsScreenProps {
+  navigation?: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+  };
+}
 
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+export default function EventsScreen({ navigation }: EventsScreenProps) {
+  const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
+
   const [isClubManager, setIsClubManager] = useState<boolean>(false);
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
-  // Kullanıcı yetkilerini kontrol etme
+  const isAdmin = profile?.is_admin === true;
+
+  // Yönetici olduğu kulüpleri kontrol et
   useEffect(() => {
-    const checkUserRoles = async () => {
+    const checkClubManager = async () => {
       if (!user) {
-        setIsAdmin(false);
         setIsClubManager(false);
         return;
       }
 
       try {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        const userData = userDoc.exists() ? userDoc.data() : null;
-
-        const adminFlag =
-          userData?.is_admin === true ||
-          userData?.role === "admin" ||
-          (user as any)?.is_admin === true ||
-          (user as any)?.role === "admin";
-
-        setIsAdmin(!!adminFlag);
-      } catch (e) {
-        console.log("Admin kontrol hatası:", e);
-        setIsAdmin(false);
-      }
-
-      try {
-        const clubsRef = collection(db, "clubs");
-        const q1 = query(clubsRef, where("yonetici_uid", "==", user.uid));
-        const q2 = query(clubsRef, where("managerId", "==", user.uid));
-        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-
-        setIsClubManager(!snap1.empty || !snap2.empty);
+        const isManager = await membershipService.isManagerOfAnyClub(user.uid);
+        setIsClubManager(isManager);
       } catch (e) {
         console.log("Kulüp yöneticisi kontrol hatası:", e);
         setIsClubManager(false);
       }
     };
 
-    checkUserRoles();
+    checkClubManager();
   }, [user]);
 
-  // Etkinlikleri veritabanından çekme
   const fetchEvents = async () => {
     try {
-      const fetchFn =
-        (eventService as any).getEvents ||
-        (eventService as any).getAllEvents ||
-        (eventService as any).getClubEvents;
-
-      if (fetchFn) {
-        const data = await fetchFn();
-        setEvents(data || []);
-      }
+      const data = await getEvents();
+      setEvents(data);
     } catch (error) {
       console.error("Etkinlik çekme hatası:", error);
       Alert.alert("Hata", "Etkinlikler yüklenirken bir hata oluştu.");
@@ -90,7 +70,6 @@ export default function EventsScreen({ navigation }: any) {
     fetchEvents();
   }, []);
 
-  // Etkinlik silme fonksiyonu
   const handleDelete = (eventId: string) => {
     Alert.alert("Etkinliği Sil", "Bu etkinliği silmek istediğinizden emin misiniz?", [
       { text: "İptal", style: "cancel" },
@@ -99,14 +78,10 @@ export default function EventsScreen({ navigation }: any) {
         style: "destructive",
         onPress: async () => {
           try {
-            const deleteFn =
-              (eventService as any).deleteEvent || (eventService as any).deleteEventById;
-            if (deleteFn) {
-              await deleteFn(eventId);
-              setEvents((prev) => prev.filter((e) => e.id !== eventId));
-              Alert.alert("Başarılı", "Etkinlik silindi.");
-            }
-          } catch (err) {
+            await deleteEvent(eventId);
+            setEvents((prev) => prev.filter((e) => e.id !== eventId));
+            Alert.alert("Başarılı", "Etkinlik silindi.");
+          } catch {
             Alert.alert("Hata", "Etkinlik silinemedi.");
           }
         },
@@ -114,58 +89,47 @@ export default function EventsScreen({ navigation }: any) {
     ]);
   };
 
-  // RSVP (Etkinliğe katılım / katılmaktan vazgeçme) işlemi
-  const handleRSVP = async (event: any) => {
+  const handleRSVP = async (event: Event) => {
     if (!user) return;
-    const attendeesList = event.attendees || event.participants || [];
-    const isAttending = attendeesList.includes(user.uid);
-    const quota = event.quota;
 
-    if (!isAttending && quota && attendeesList.length >= quota) {
+    const isAttending = event.katilimcilar.includes(user.uid);
+    const kontenjan = event.kontenjan ?? null;
+
+    if (!isAttending && kontenjan !== null && event.katilimcilar.length >= kontenjan) {
       Alert.alert("Kontenjan Dolu", "Maalesef bu etkinliğin kontenjanı dolmuştur.");
       return;
     }
 
     try {
-      const joinFn =
-        (eventService as any).joinEvent ||
-        (eventService as any).attendEvent ||
-        (eventService as any).toggleEventRSVP;
-      const leaveFn = (eventService as any).leaveEvent || (eventService as any).toggleEventRSVP;
-
-      if (isAttending && leaveFn) {
-        await leaveFn(event.id, user.uid);
-      } else if (!isAttending && joinFn) {
-        await joinFn(event.id, user.uid);
+      if (isAttending) {
+        await leaveEvent(event.id, user.uid);
+      } else {
+        await joinEvent(event.id, user.uid);
       }
       fetchEvents();
     } catch (err) {
-      Alert.alert("Hata", "İşlem gerçekleştirilemedi.");
+      Alert.alert("Hata", getErrorMessage(err, "İşlem gerçekleştirilemedi."));
     }
   };
 
-  // Standart İngilizce 'date' alanını güvenli Date nesnesine çeviren fonksiyon (Timestamp desteği)
-  const getCleanDate = (item: any): Date | null => {
-    const raw = item.date; // Standart şemadaki date alanı
+  const getCleanDate = (item: Event): Date | null => {
+    const raw = item.tarih;
     if (!raw) return null;
 
-    if (raw?.seconds) {
+    if (typeof raw !== "string") {
       return new Date(raw.seconds * 1000);
     }
 
-    if (typeof raw === "string") {
-      let d = new Date(raw.replace(" ", "T"));
-      if (!isNaN(d.getTime())) return d;
-    }
+    const d = new Date(raw.replace(" ", "T"));
+    if (!isNaN(d.getTime())) return d;
 
     return null;
   };
 
-  // Etkinlik tarihini okunaklı formata çevirme
-  const formatEventDate = (item: any): string => {
+  const formatEventDate = (item: Event): string => {
     const d = getCleanDate(item);
     if (!d) {
-      return typeof item.date === "string" && item.date.trim() ? item.date : "Tarih Belirtilmedi";
+      return typeof item.tarih === "string" && item.tarih.trim() ? item.tarih : "Tarih Belirtilmedi";
     }
 
     return d.toLocaleDateString("tr-TR", {
@@ -177,18 +141,12 @@ export default function EventsScreen({ navigation }: any) {
     });
   };
 
-  // Yayınlanma tarihini formatlama (createdAt)
-  const formatPublishedDate = (item: any): string => {
+  const formatPublishedDate = (item: Event): string => {
     const raw = item.createdAt;
     if (!raw) return "";
 
-    let d: Date;
-    if (raw?.seconds) {
-      d = new Date(raw.seconds * 1000);
-    } else {
-      d = new Date(raw);
-    }
-
+    const d =
+      typeof raw === "string" ? new Date(raw) : new Date(raw.seconds * 1000);
     if (isNaN(d.getTime())) return "";
 
     const pad = (num: number) => num.toString().padStart(2, "0");
@@ -197,15 +155,11 @@ export default function EventsScreen({ navigation }: any) {
 
   const nowTime = new Date().getTime();
 
-  // FİLTRELEME MANTIĞI (Hedef Kitle, Taslak Durumu ve Yaklaşan/Geçmiş Sekmeleri)
-  const filteredEvents = events.filter((e: any) => {
-    // Taslak olan etkinlikler normal kullanıcılara gösterilmesin (Yönetici görebilir veya gizlenebilir)
-    if (e.status === "taslak" && !isAdmin && !isClubManager) return false;
+  const filteredEvents = events.filter((e: Event) => {
+    if (e.status === EVENT_STATUS.DRAFT && !isAdmin && !isClubManager) return false;
 
-    const audience = (e.targetAudience || "").toLowerCase();
-
-    if (audience === "admin" && !isAdmin) return false;
-    if (audience === "club_manager" && !isAdmin && !isClubManager) return false;
+    if (e.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS && !isAdmin) return false;
+    if (e.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS && !isAdmin && !isClubManager) return false;
 
     const eventDate = getCleanDate(e);
 
@@ -221,47 +175,41 @@ export default function EventsScreen({ navigation }: any) {
     return eventTime < nowTime;
   });
 
-  // Etkinlik Kartı Bileşeni
-  const renderEventCard = ({ item }: { item: any }) => {
-    const attendeesList = item.attendees || item.participants || [];
-    const isAttending = attendeesList.includes(user?.uid || "");
-    const isClubEvent = !!item.clubId;
+  const renderEventCard = ({ item }: { item: Event }) => {
+    const isAttending = item.katilimcilar.includes(user?.uid || "");
+    const isClubEvent = !!item.club_id;
 
-    // Standart İngilizce değişkenlerin okunması
-    const title = item.title || "İsimsiz Etkinlik";
-    const description = item.description || "";
-    const location = item.location || "Konum Belirtilmedi";
-    const imageUrl = item.imageUrl || ""; // Yeni eklenen görsel URL alanı
+    const title = item.baslik || "İsimsiz Etkinlik";
+    const description = item.aciklama || "";
+    const location = item.konum || "Konum Belirtilmedi";
+    const imageUrl = item.gorselUrl || "";
     const eventDateStr = formatEventDate(item);
     const publishedDateStr = formatPublishedDate(item);
 
-    const quota = item.quota;
-    const currentAttendeeCount = attendeesList.length;
-    const isFull = quota ? currentAttendeeCount >= quota : false;
-
-    const audience = (item.targetAudience || "").toLowerCase();
+    const kontenjan = item.kontenjan ?? null;
+    const currentAttendeeCount = item.katilimcilar.length;
+    const isFull = kontenjan !== null && currentAttendeeCount >= kontenjan;
 
     let badgeText = "Genel Etkinlik";
     let badgeBg = "bg-indigo-500/20";
     let badgeTextClr = "text-indigo-400";
 
-    if (audience === "admin") {
+    if (item.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS) {
       badgeText = "Admin Özel";
       badgeBg = "bg-rose-500/20";
       badgeTextClr = "text-rose-400";
-    } else if (audience === "club_manager") {
+    } else if (item.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS) {
       badgeText = "Kulüp Yöneticileri";
       badgeBg = "bg-purple-500/20";
       badgeTextClr = "text-purple-400";
     } else if (isClubEvent) {
-      badgeText = item.clubName || "Kulüp Etkinliği";
+      badgeText = item.club_ad || "Kulüp Etkinliği";
       badgeBg = "bg-amber-500/20";
       badgeTextClr = "text-amber-400";
     }
 
     return (
       <View className="bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700">
-        {/* Etkinlik Görseli (Eğer URL girilmişse gösterilir) */}
         {!!imageUrl && (
           <Image
             source={{ uri: imageUrl }}
@@ -276,7 +224,7 @@ export default function EventsScreen({ navigation }: any) {
               <View className={`px-2 py-0.5 rounded ${badgeBg}`}>
                 <Text className={`text-xs font-semibold ${badgeTextClr}`}>{badgeText}</Text>
               </View>
-              {item.status === "taslak" && (
+              {item.status === EVENT_STATUS.DRAFT && (
                 <View className="px-2 py-0.5 rounded bg-yellow-500/20">
                   <Text className="text-xs font-semibold text-yellow-400">Taslak</Text>
                 </View>
@@ -289,7 +237,9 @@ export default function EventsScreen({ navigation }: any) {
             <View className="flex-row items-center gap-2">
               {!isClubEvent && (
                 <TouchableOpacity
-                  onPress={() => navigation?.navigate("EditEventScreen", { eventId: item.id })}
+                  onPress={() =>
+                    navigation?.navigate("EditEventScreen", { eventId: item.id })
+                  }
                   className="p-1.5 bg-slate-700 rounded-md"
                 >
                   <Text className="text-xs">✏️</Text>
@@ -313,7 +263,8 @@ export default function EventsScreen({ navigation }: any) {
             <Text className="text-slate-400 text-xs mt-0.5">📍 {location}</Text>
 
             <Text className="text-indigo-300 font-medium text-xs mt-1">
-              👥 Katılımcı: {currentAttendeeCount} {quota ? `/ ${quota}` : "(Sınırsız)"}
+              👥 Katılımcı: {currentAttendeeCount}{" "}
+              {kontenjan !== null ? `/ ${kontenjan}` : "(Sınırsız)"}
             </Text>
           </View>
 
@@ -387,7 +338,7 @@ export default function EventsScreen({ navigation }: any) {
       ) : (
         <FlatList
           data={filteredEvents}
-          keyExtractor={(item, index) => item.id || index.toString()}
+          keyExtractor={(item) => item.id}
           renderItem={renderEventCard}
           refreshControl={
             <RefreshControl

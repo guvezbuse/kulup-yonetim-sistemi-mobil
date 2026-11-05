@@ -9,41 +9,23 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
-import { SystemRole } from "../types";
-
-// Şartname ve ekranlarla %100 uyumlu, çift alan isimlerini destekleyen tam UserProfile arayüzü
-export interface UserProfile {
-  id: string;
-  uid: string;
-  email: string;
-  name?: string;
-  ad?: string;
-  surname?: string;
-  soyad?: string;
-  phone?: string;
-  telefon?: string;
-  is_admin: boolean; //boolean yetki bayragi
-  role?: SystemRole | string; // sistem rolu ("admin" veya "student")
-  ogrenciNo?: string;
-  bolum?: string;
-  avatarUrl?: string;
-  createdAt?: any;
-}
+import { getErrorMessage } from "../lib/errors";
+import { User } from "../types";
 
 interface AuthState {
   user: FirebaseUser | null;
-  profile: UserProfile | null;
+  profile: User | null;
   loading: boolean;
   error: string | null;
   initializeAuthListener: () => () => void;
-  fetchProfile: (uid: string) => Promise<UserProfile | null>;
-  login: (email: string, pass: string) => Promise<UserProfile | null>;
+  fetchProfile: (uid: string) => Promise<User | null>;
+  login: (email: string, pass: string) => Promise<User | null>;
   register: (data: {
-    name: string;
-    surname: string;
+    ad: string;
+    soyad: string;
     email: string;
     pass: string;
-    phone?: string;
+    telefon?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -59,37 +41,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   // Firestore'dan kullanıcı profilini çeken yardımcı fonksiyon
-  fetchProfile: async (uid: string): Promise<UserProfile | null> => {
+  fetchProfile: async (uid: string): Promise<User | null> => {
     try {
       const userDoc = await getDoc(doc(db, "users", uid));
       if (userDoc.exists()) {
         const rawData = userDoc.data();
-        const profileData: UserProfile = {
-          id: uid,
-          uid: uid,
+        const profileData: User = {
+          uid,
           email: rawData.email || "",
-          name: rawData.name || rawData.ad || "",
-          ad: rawData.ad || rawData.name || "",
-          surname: rawData.surname || rawData.soyad || "",
-          soyad: rawData.soyad || rawData.surname || "",
-          phone: rawData.phone || rawData.telefon || "",
-          telefon: rawData.telefon || rawData.phone || "",
-          is_admin: Boolean(rawData.is_admin || rawData.role === "admin"),
-          role: rawData.role || (rawData.is_admin ? "admin" : "student"),
-          ogrenciNo: rawData.ogrenciNo || "",
+          ad: rawData.ad || "",
+          soyad: rawData.soyad || "",
+          telefon: rawData.telefon || "",
+          student_no: rawData.student_no || "",
           bolum: rawData.bolum || "",
           avatarUrl: rawData.avatarUrl || "",
+          is_admin: rawData.is_admin === true,
           createdAt: rawData.createdAt || null,
         };
         set({ profile: profileData });
         return profileData;
       } else {
-        const fallbackProfile: UserProfile = {
-          id: uid,
+        const fallbackProfile: User = {
           uid,
           email: auth.currentUser?.email || "",
+          ad: "",
+          soyad: "",
           is_admin: false,
-          role: "student",
         };
         set({ profile: fallbackProfile });
         return fallbackProfile;
@@ -126,31 +103,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const userProfile = await get().fetchProfile(firebaseUser.uid);
       set({ loading: false });
       return userProfile;
-    } catch (err: any) {
-      set({ error: err.message, loading: false });
+    } catch (err) {
+      set({ error: getErrorMessage(err, "İşlem başarısız."), loading: false });
       throw err;
     }
   },
 
   // Kayıt olma fonksiyonu
-  register: async ({ name, surname, email, pass, phone = "" }) => {
+  register: async ({ ad, soyad, email, pass, telefon = "" }) => {
     set({ loading: true, error: null });
     try {
       const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
       const uid = res.user.uid;
 
-      const profileData: UserProfile = {
-        id: uid,
+      const profileData: User = {
         uid,
         email: email.trim(),
-        name,
-        ad: name,
-        surname,
-        soyad: surname,
-        phone,
-        telefon: phone,
-        is_admin: false, // Yeni kayıt olan her kullanıcı varsayılan olarak öğrenci statüsündedir
-        role: "student",
+        ad,
+        soyad,
+        telefon,
+        student_no: "",
+        is_admin: false,
       };
 
       await setDoc(doc(db, "users", uid), {
@@ -159,8 +132,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       set({ user: res.user, profile: profileData, loading: false });
-    } catch (err: any) {
-      set({ error: err.message, loading: false });
+    } catch (err) {
+      set({ error: getErrorMessage(err, "İşlem başarısız."), loading: false });
       throw err;
     }
   },
@@ -171,8 +144,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await signOut(auth);
       set({ user: null, profile: null, loading: false });
-    } catch (err: any) {
-      set({ error: err.message, loading: false });
+    } catch (err) {
+      set({ error: getErrorMessage(err, "İşlem başarısız."), loading: false });
       throw err;
     }
   },
@@ -183,8 +156,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await sendPasswordResetEmail(auth, email.trim());
       set({ loading: false });
-    } catch (err: any) {
-      set({ error: err.message, loading: false });
+    } catch (err) {
+      set({ error: getErrorMessage(err, "İşlem başarısız."), loading: false });
       throw err;
     }
   },

@@ -14,7 +14,14 @@ import { Button } from "../components/Button";
 import { membershipService } from "../services/membershipService";
 import { notificationService } from "../services/notificationService";
 import { useAuthStore } from "../store/authStore";
-import { Club } from "../types";
+import { getErrorMessage } from "../lib/errors";
+import {
+  CLUB_ROLE,
+  Club,
+  MEMBERSHIP_STATUS,
+  MembershipStatus,
+  isClubManagerRole,
+} from "../types";
 
 interface ClubDetailScreenProps {
   club: Club;
@@ -31,15 +38,15 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
   const profile = useAuthStore((state) => state.profile);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [membershipStatus, setMembershipStatus] = useState<string | null>(null);
+  const [membershipStatus, setMembershipStatus] = useState<MembershipStatus | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [motivationMessage, setMotivationMessage] = useState("");
 
   // Kullanıcı ID'si (Firebase Auth 'uid' veya Firestore Profil 'id/uid')
-  const currentUserId = user?.uid || profile?.uid || profile?.id || "";
+  const currentUserId = user?.uid || profile?.uid || "";
 
-  // Sistem Yöneticisi (Admin) Kontrolü — Profil üzerindeki is_admin veya role alanına göre
-  const isSystemAdmin = Boolean(profile?.is_admin) || profile?.role === "admin";
+  // Sistem Yöneticisi (Admin) Kontrolü — tek kaynak: is_admin
+  const isSystemAdmin = Boolean(profile?.is_admin);
 
   useEffect(() => {
     loadMembership();
@@ -74,6 +81,10 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
     }
 
     setSubmitting(true);
+    const applicantName = profile?.ad
+      ? `${profile.ad} ${profile.soyad || ""}`.trim()
+      : user?.email || "Bir öğrenci";
+
     try {
       // 1. Veritabanına başvuruyu kaydet
       await membershipService.applyToClub(
@@ -81,41 +92,35 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
         currentUserId,
         user?.email || profile?.email || "",
         motivationMessage,
+        applicantName,
       );
 
       // 2. Kulüp yöneticilerine bildirim fırlat
       try {
-        const applicantName = profile?.name
-          ? `${profile.name} ${profile.surname || ""}`.trim()
-          : profile?.ad
-            ? `${profile.ad} ${profile.soyad || ""}`.trim()
-            : user?.email || "Bir öğrenci";
-
         await notificationService.notifyMembershipApplication(club.id, applicantName);
       } catch (pushErr) {
         console.log("Kulüp yöneticisine başvuru bildirimi gönderilemedi:", pushErr);
       }
 
       Alert.alert("Başarılı", "Katılma başvurunuz kulüp yöneticisine iletildi.");
-      setMembershipStatus("beklemede");
-      setMyRole("uye");
-    } catch (err: any) {
-      Alert.alert("Başvuru Hatası", err.message || "Başvuru sırasında hata oluştu.");
+      setMembershipStatus(MEMBERSHIP_STATUS.PENDING);
+      setMyRole(CLUB_ROLE.MEMBER);
+    } catch (err) {
+      Alert.alert("Başvuru Hatası", getErrorMessage(err, "Başvuru sırasında hata oluştu."));
     } finally {
       setSubmitting(false);
     }
   };
 
   // Kulüp içi yönetici yetkisi kontrolü
-  const isClubManager = myRole === "yonetici" || myRole === "baskan";
+  const isClubManager = isClubManagerRole(myRole);
 
   // Kulübün Firestore'daki kapak görseli veya varsayılan banner
-  const bannerUrl = club.gorselUrl || club.imageUrl || DEFAULT_BANNER;
+  const bannerUrl = club.gorselUrl || DEFAULT_BANNER;
 
   // Genişletilmiş açıklama alanı
-  const fullDescription =
+  const aciklamaMetni =
     club.detayliAciklama ||
-    club.fullDescription ||
     `${club.ad}, öğrencilerin sosyal, kültürel ve akademik yönden gelişimlerini desteklemek, kampüs içinde nitelikli etkinlikler düzenlemek ve üyeler arasında güçlü bir iletişim ağı kurmak amacıyla faaliyet göstermektedir.`;
 
   return (
@@ -165,7 +170,7 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
             {/* 2. KULÜP HAKKINDA (DETAYLI AÇIKLAMA KARTI) */}
             <Card className="mb-4">
               <Text className="text-white font-bold text-sm mb-2">Kulüp Hakkında</Text>
-              <Text className="text-slate-300 text-xs leading-5">{fullDescription}</Text>
+              <Text className="text-slate-300 text-xs leading-5">{aciklamaMetni}</Text>
             </Card>
 
             {/* 3. KULÜP BİLGİLERİ VE ÜYELİK DURUMU */}
@@ -183,9 +188,9 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
                   className={`font-bold text-xs ${
                     isSystemAdmin
                       ? "text-amber-400"
-                      : membershipStatus === "aktif"
+                      : membershipStatus === MEMBERSHIP_STATUS.ACTIVE
                         ? "text-emerald-400"
-                        : membershipStatus === "beklemede"
+                        : membershipStatus === MEMBERSHIP_STATUS.PENDING
                           ? "text-amber-400"
                           : "text-slate-400"
                   }`}
@@ -194,9 +199,9 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
                     ? "SİSTEM YÖNETİCİSİ"
                     : isClubManager
                       ? "YÖNETİCİ (AKTİF)"
-                      : membershipStatus === "aktif"
+                      : membershipStatus === MEMBERSHIP_STATUS.ACTIVE
                         ? "AKTİF ÜYE"
-                        : membershipStatus === "beklemede"
+                        : membershipStatus === MEMBERSHIP_STATUS.PENDING
                           ? "BAŞVURU BEKLEMEDE"
                           : "ÜYE DEĞİL"}
                 </Text>
@@ -215,7 +220,7 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
                   yönetebilirsiniz.
                 </Text>
               </Card>
-            ) : membershipStatus === "aktif" ? (
+            ) : membershipStatus === MEMBERSHIP_STATUS.ACTIVE ? (
               <Card className="mb-4 border border-emerald-500/30 bg-emerald-950/20">
                 <Text className="text-emerald-400 font-bold text-sm">✓ Aktif Kulüp Üyesisiniz</Text>
                 <Text className="text-slate-300 text-xs mt-1">
@@ -223,7 +228,7 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
                   rol alabilirsiniz.
                 </Text>
               </Card>
-            ) : membershipStatus === "beklemede" ? (
+            ) : membershipStatus === MEMBERSHIP_STATUS.PENDING ? (
               <Card className="mb-4 border border-amber-500/30 bg-amber-950/20">
                 <Text className="text-amber-400 font-bold text-sm">⏳ Başvurunuz İnceleniyor</Text>
                 <Text className="text-slate-300 text-xs mt-1">

@@ -18,7 +18,15 @@ import {
   ClubMemberDetail,
 } from "../../services/membershipService";
 import { invitationService, InvitationItem } from "../../services/invitationService";
-import { ClubRole } from "../../types";
+import { notificationService } from "../../services/notificationService";
+import { getErrorMessage } from "../../lib/errors";
+import {
+  CLUB_ROLE,
+  ClubRole,
+  JOIN_REQUEST_STATUS,
+  MEMBERSHIP_STATUS,
+  isClubManagerRole,
+} from "../../types";
 import * as Clipboard from "expo-clipboard";
 
 interface Props {
@@ -35,7 +43,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
 
   // Davet oluşturma state'leri
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<ClubRole>("uye");
+  const [role, setRole] = useState<ClubRole>(CLUB_ROLE.MEMBER);
   const [inviting, setInviting] = useState(false);
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null);
   const [invitedTargetEmail, setInvitedTargetEmail] = useState<string>("");
@@ -96,20 +104,26 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
   const handleApprove = async (item: JoinRequestItem) => {
     try {
       await membershipService.approveRequest(item.id, clubId, item.user_id);
+      void notificationService
+        .notifyApplicationDecision(item.user_id, clubName, JOIN_REQUEST_STATUS.APPROVED)
+        .catch((e) => console.log("Onay bildirimi gönderilemedi:", e));
       Alert.alert("Onaylandı", `${item.user_email} kulübe kabul edildi.`);
       loadData();
-    } catch (e: any) {
-      Alert.alert("Hata", e.message || "Onaylanamadı.");
+    } catch (e) {
+      Alert.alert("Hata", getErrorMessage(e, "Onaylanamadı."));
     }
   };
 
   const handleReject = async (item: JoinRequestItem) => {
     try {
       await membershipService.rejectRequest(item.id, clubId, item.user_id);
+      void notificationService
+        .notifyApplicationDecision(item.user_id, clubName, JOIN_REQUEST_STATUS.REJECTED)
+        .catch((e) => console.log("Red bildirimi gönderilemedi:", e));
       Alert.alert("Reddedildi", `${item.user_email} başvurusu reddedildi.`);
       loadData();
-    } catch (e: any) {
-      Alert.alert("Hata", e.message || "Reddedilemedi.");
+    } catch (e) {
+      Alert.alert("Hata", getErrorMessage(e, "Reddedilemedi."));
     }
   };
 
@@ -129,12 +143,12 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
     if (!selectedMember) return;
     try {
       await membershipService.toggleMemberStatus(
-        selectedMember.membershipId,
+        selectedMember.membership_id,
         selectedMember.status,
       );
       closeMemberModal();
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       Alert.alert("Hata", "Durum güncellenemedi.");
     }
   };
@@ -143,10 +157,10 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
   const handleToggleRole = async () => {
     if (!selectedMember) return;
     try {
-      await membershipService.toggleMemberRole(selectedMember.membershipId, selectedMember.role);
+      await membershipService.toggleMemberRole(selectedMember.membership_id, selectedMember.role);
       closeMemberModal();
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       Alert.alert("Hata", "Rol güncellenemedi.");
     }
   };
@@ -156,7 +170,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
     if (!selectedMember) return;
     Alert.alert(
       "Üyeyi Çıkar",
-      `${selectedMember.name || selectedMember.email} kulüpten tamamen silinecek. Onaylıyor musunuz?`,
+      `${selectedMember.ad_soyad || selectedMember.email} kulüpten tamamen silinecek. Onaylıyor musunuz?`,
       [
         { text: "Vazgeç", style: "cancel" },
         {
@@ -164,11 +178,11 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
           style: "destructive",
           onPress: async () => {
             try {
-              await membershipService.removeMemberFromClub(selectedMember.membershipId);
+              await membershipService.removeMemberFromClub(selectedMember.membership_id);
               closeMemberModal();
               loadData();
-            } catch (e: any) {
-              Alert.alert("Hata", e.message || "Üye silinemedi.");
+            } catch (e) {
+              Alert.alert("Hata", getErrorMessage(e, "Üye silinemedi."));
             }
           },
         },
@@ -202,8 +216,8 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
 
       setEmail("");
       loadData();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "İşlem tamamlanamadı.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "İşlem tamamlanamadı."));
     } finally {
       setInviting(false);
     }
@@ -219,8 +233,8 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
         `Davet süresi +72 saat uzatıldı ve yeni bağlantı oluşturuldu:\n\n${res.newInviteLink}`,
       );
       loadData();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Davet yenilenemedi.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "Davet yenilenemedi."));
     }
   };
 
@@ -237,7 +251,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
             try {
               await invitationService.deleteInvitation(inviteId);
               loadData();
-            } catch (err: any) {
+            } catch (err) {
               Alert.alert("Hata", "Davet silinemedi.");
             }
           },
@@ -290,7 +304,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
             >
               <View className="flex-1 mr-2">
                 <Text className="text-white font-semibold text-xs">
-                  {item.user_name || item.user_email}
+                  {item.ad_soyad || item.user_email}
                 </Text>
                 <Text className="text-slate-400 text-[10px]">{item.user_email}</Text>
                 {item.mesaj ? (
@@ -327,16 +341,16 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
           </View>
         ) : (
           members.map((item) => {
-            const isYonetici = item.role === "yonetici" || (item.role as any) === "yönetici";
+            const isYonetici = isClubManagerRole(item.role);
             return (
               <TouchableOpacity
-                key={item.membershipId}
+                key={item.membership_id}
                 onPress={() => openMemberModal(item)}
                 activeOpacity={0.7}
                 className="bg-slate-800 p-3 rounded-xl mb-2 border border-slate-700/80 flex-row justify-between items-center"
               >
                 <View className="flex-1 mr-2">
-                  <Text className="text-white font-bold text-xs">{item.name || item.email}</Text>
+                  <Text className="text-white font-bold text-xs">{item.ad_soyad || item.email}</Text>
                   <Text className="text-slate-400 text-[10px]">{item.email}</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
@@ -350,17 +364,17 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                         isYonetici ? "text-amber-400" : "text-indigo-400"
                       }`}
                     >
-                      {isYonetici ? "yonetici" : "uye"}
+                      {isYonetici ? CLUB_ROLE.MANAGER : CLUB_ROLE.MEMBER}
                     </Text>
                   </View>
                   <View
                     className={`px-2 py-0.5 rounded ${
-                      item.status === "aktif" ? "bg-emerald-500/20" : "bg-rose-500/20"
+                      item.status === MEMBERSHIP_STATUS.ACTIVE ? "bg-emerald-500/20" : "bg-rose-500/20"
                     }`}
                   >
                     <Text
                       className={`text-[10px] font-bold uppercase ${
-                        item.status === "aktif" ? "text-emerald-400" : "text-rose-400"
+                        item.status === MEMBERSHIP_STATUS.ACTIVE ? "text-emerald-400" : "text-rose-400"
                       }`}
                     >
                       {item.status}
@@ -392,7 +406,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
             const { text: statusText, isExpired } = getRemainingHoursText(
               inv.son_gecerlilik_tarihi,
             );
-            const isInvYonetici = inv.role === "yonetici" || (inv.role as any) === "yönetici";
+            const isInvYonetici = isClubManagerRole(inv.role);
             return (
               <View
                 key={inv.id}
@@ -451,17 +465,19 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
         />
         <View className="flex-row gap-3 mb-4 mt-1">
           <TouchableOpacity
-            onPress={() => setRole("uye")}
+            onPress={() => setRole(CLUB_ROLE.MEMBER)}
             className={`flex-1 py-2 rounded-lg items-center border ${
-              role === "uye" ? "bg-indigo-600 border-indigo-500" : "bg-slate-800 border-slate-700"
+              role === CLUB_ROLE.MEMBER
+                ? "bg-indigo-600 border-indigo-500"
+                : "bg-slate-800 border-slate-700"
             }`}
           >
             <Text className="text-white text-xs font-bold">Kulüp Üyesi</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => setRole("yonetici")}
+            onPress={() => setRole(CLUB_ROLE.MANAGER)}
             className={`flex-1 py-2 rounded-lg items-center border ${
-              role === "yonetici"
+              role === CLUB_ROLE.MANAGER
                 ? "bg-amber-600 border-amber-500"
                 : "bg-slate-800 border-slate-700"
             }`}
@@ -470,7 +486,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
           </TouchableOpacity>
         </View>
         <Button
-          title={role === "yonetici" ? "Yönetici Olarak Davet Et" : "Üye Olarak Davet Et"}
+          title={role === CLUB_ROLE.MANAGER ? "Yönetici Olarak Davet Et" : "Üye Olarak Davet Et"}
           onPress={handleSendInvite}
           loading={inviting}
         />
@@ -518,7 +534,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
             <View className="flex-row justify-between items-start mb-4">
               <View className="flex-1 mr-3">
                 <Text className="text-white text-base font-bold">
-                  {selectedMember?.name || selectedMember?.email}
+                  {selectedMember?.ad_soyad || selectedMember?.email}
                 </Text>
                 <Text className="text-slate-400 text-xs mt-0.5">{selectedMember?.email}</Text>
                 <Text className="text-indigo-400 text-xs font-semibold mt-1">
@@ -540,7 +556,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                 className="bg-indigo-600/90 active:bg-indigo-600 py-3 rounded-xl items-center"
               >
                 <Text className="text-white font-bold text-xs">
-                  {selectedMember?.role === "yonetici" ? "Üyeliğe Düşür" : "Yönetici Yap"}
+                  {selectedMember?.role === CLUB_ROLE.MANAGER ? "Üyeliğe Düşür" : "Yönetici Yap"}
                 </Text>
               </TouchableOpacity>
 
@@ -549,7 +565,7 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                 className="bg-slate-700 active:bg-slate-600 py-3 rounded-xl items-center"
               >
                 <Text className="text-slate-200 font-bold text-xs">
-                  {selectedMember?.status === "aktif" ? "Üyeyi Pasife Al" : "Üyeyi Aktif Yap"}
+                  {selectedMember?.status === MEMBERSHIP_STATUS.ACTIVE ? "Üyeyi Pasife Al" : "Üyeyi Aktif Yap"}
                 </Text>
               </TouchableOpacity>
 

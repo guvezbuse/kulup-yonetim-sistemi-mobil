@@ -3,6 +3,7 @@ import { View, Text, Modal, Alert } from "react-native";
 import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { announcementService, AnnouncementItem } from "../../services/announcementService";
+import { getErrorMessage } from "../../lib/errors";
 
 interface EditAnnouncementModalProps {
   visible: boolean;
@@ -42,8 +43,8 @@ export default function EditAnnouncementModal({
       Alert.alert("Başarılı", "Duyuru güncellendi.");
       onSuccess();
       onClose();
-    } catch (err: any) {
-      Alert.alert("Hata", err.message || "Duyuru güncellenemedi.");
+    } catch (err) {
+      Alert.alert("Hata", getErrorMessage(err, "Duyuru güncellenemedi."));
     } finally {
       setLoading(false);
     }

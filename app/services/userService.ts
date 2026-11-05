@@ -1,29 +1,21 @@
-import { db } from "./firebase";
+import { db } from "../lib/firebase";
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
-
-export interface UserProfile {
-  id: string;
-  name?: string;
-  surname?: string;
-  email?: string;
-  role?: "admin" | "yonetici" | "uye";
-  durum?: "aktif" | "pasif";
-}
+import { User } from "../types";
 
 export const userService = {
   // Tüm kullanıcıları çek
-  getAllUsers: async (): Promise<UserProfile[]> => {
+  getAllUsers: async (): Promise<User[]> => {
     const querySnapshot = await getDocs(collection(db, "users"));
-    const users: UserProfile[] = [];
+    const users: User[] = [];
     querySnapshot.forEach((docSnap) => {
-      users.push({ id: docSnap.id, ...docSnap.data() } as UserProfile);
+      users.push({ ...docSnap.data(), uid: docSnap.id } as User);
     });
     return users;
   },
 
-  // Kullanıcı rolünü güncelle (admin / uye)
-  updateUserRole: async (userId: string, newRole: "admin" | "uye") => {
+  // Kullanıcının sistem adminliğini güncelle
+  updateUserAdmin: async (userId: string, isAdmin: boolean) => {
     const userRef = doc(db, "users", userId);
-    await updateDoc(userRef, { role: newRole });
+    await updateDoc(userRef, { is_admin: isAdmin });
   },
 };

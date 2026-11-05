@@ -11,7 +11,7 @@ export default function MemberIdCardScreen({ onBack }: MemberIdCardScreenProps) 
   const user = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
 
-  const fullName = profile?.name ? `${profile.name} ${profile.surname || ""}`.trim() : "Öğrenci";
+  const fullName = profile?.ad ? `${profile.ad} ${profile.soyad || ""}`.trim() : "Öğrenci";
 
   return (
     <View className="flex-1 bg-slate-900 px-4 pt-4">

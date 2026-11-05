@@ -2,37 +2,97 @@
 // KULÜP YÖNETİM SİSTEMİ - TİP TANIMLAMALARI
 // ==========================================
 
-// Sistem ve Kulüp Rolleri
-export type SystemRole = "admin" | "user";
-export type ClubRole = "yonetici" | "uye";
-export type MembershipStatus = "beklemede" | "aktif" | "pasif" | "reddedildi";
-export type EventStatus = "taslak" | "yayınlanan" | "tamamlanan" | "iptal";
-export type RSVPStatus = "katılıyor" | "katılmıyor" | "beklemede";
-export type AnnouncementScope = "sistem" | "kulüp";
-export type TargetAudience = "Tüm Yöneticiler" | "Tüm Üyeler" | "Herkes";
+import type { Timestamp } from "firebase/firestore";
+
+// Firestore tarih alanları: yeni kayıtlar Timestamp, eski/ISO kayıtlar string olabilir.
+export type FirestoreDate = Timestamp | string;
+
+// ==========================================
+// KANONİK DEĞERLER (tek kaynak)
+// Firestore'a YALNIZCA bu ASCII değerler yazılır.
+// Başka yazım / eş anlamlı alan kabul edilmez.
+// ==========================================
+export const CLUB_ROLE = {
+  MANAGER: "yonetici",
+  MEMBER: "uye",
+} as const;
+
+export const MEMBERSHIP_STATUS = {
+  PENDING: "beklemede",
+  ACTIVE: "aktif",
+  PASSIVE: "pasif",
+  REJECTED: "reddedildi",
+} as const;
+
+export const EVENT_STATUS = {
+  DRAFT: "taslak",
+  PUBLISHED: "yayinlandi",
+  COMPLETED: "tamamlandi",
+  CANCELLED: "iptal",
+} as const;
+
+export const RSVP_STATUS = {
+  ATTENDING: "katiliyor",
+  NOT_ATTENDING: "katilmiyor",
+  PENDING: "beklemede",
+} as const;
+
+export const TARGET_AUDIENCE = {
+  ALL_MANAGERS: "tum_yoneticiler",
+  ALL_MEMBERS: "tum_uyeler",
+  ALL_ADMINS: "tum_adminler",
+  CLUB_MEMBERS: "kulup_uyeleri",
+  EVERYONE: "herkes",
+} as const;
+
+export const CLUB_STATUS = {
+  ACTIVE: "aktif",
+  PASSIVE: "pasif",
+} as const;
+
+export const JOIN_REQUEST_STATUS = {
+  PENDING: "beklemede",
+  APPROVED: "onaylandi",
+  REJECTED: "reddedildi",
+} as const;
+
+export const INVITATION_STATUS = {
+  PENDING: "beklemede",
+  ACCEPTED: "kabul_edildi",
+  CANCELLED: "iptal",
+} as const;
+
+export const ANNOUNCEMENT_SCOPE = {
+  SYSTEM: "sistem",
+  CLUB: "kulup",
+} as const;
+
+export type ClubRole = (typeof CLUB_ROLE)[keyof typeof CLUB_ROLE];
+export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHIP_STATUS];
+export type EventStatus = (typeof EVENT_STATUS)[keyof typeof EVENT_STATUS];
+export type RSVPStatus = (typeof RSVP_STATUS)[keyof typeof RSVP_STATUS];
+export type ClubStatus = (typeof CLUB_STATUS)[keyof typeof CLUB_STATUS];
+export type JoinRequestStatus = (typeof JOIN_REQUEST_STATUS)[keyof typeof JOIN_REQUEST_STATUS];
+export type InvitationStatus = (typeof INVITATION_STATUS)[keyof typeof INVITATION_STATUS];
+export type AnnouncementScope = (typeof ANNOUNCEMENT_SCOPE)[keyof typeof ANNOUNCEMENT_SCOPE];
+export type TargetAudience = (typeof TARGET_AUDIENCE)[keyof typeof TARGET_AUDIENCE];
+
+export const isClubManagerRole = (role?: string | null): boolean =>
+  role === CLUB_ROLE.MANAGER;
 
 // 1. Kullanıcı Modeli (Sistem geneli hesap)
 export interface User {
-  id: string;
+  uid: string;
   ad: string;
   soyad: string;
   email: string;
   telefon?: string;
-  is_admin: boolean; // Sistem admini bayrağı (kulüpten bağımsız)
-  createdAt: string;
-
-  // Arayüz ve profil süreçleri için opsiyonel alanlar:
-  uid?: string;
-  name?: string;
-  surname?: string;
-  role?: SystemRole | string;
-  ogrenciNo?: string;
+  student_no?: string;
   bolum?: string;
   avatarUrl?: string;
+  is_admin: boolean; // Sistem admini bayrağı (tek kaynak)
+  createdAt?: FirestoreDate;
 }
-
-// Geriye dönük uyumluluk için UserProfile takma adı
-export type UserProfile = User;
 
 // 2. Kulüp Modeli
 export interface Club {
@@ -40,14 +100,12 @@ export interface Club {
   ad: string;
   aciklama: string;
   olusturan_admin_id: string;
-  durum: "aktif" | "pasif";
+  durum: ClubStatus;
   createdAt: string;
 
   // Detay Sayfası ve UI geliştirmeleri için eklenen opsiyonel alanlar:
   gorselUrl?: string;
-  imageUrl?: string;
   detayliAciklama?: string;
-  fullDescription?: string;
 }
 
 // 3. Üyelik Modeli (Kullanıcı <-> Kulüp çoktan çoğa ilişki)
@@ -68,7 +126,7 @@ export interface Invitation {
   role: ClubRole;
   token: string;
   son_gecerlilik_tarihi: string;
-  durum: "beklemede" | "kabul_edildi" | "iptal";
+  durum: InvitationStatus;
 }
 
 // 5. Kulübe Katılma Başvurusu (JoinRequest)
@@ -77,7 +135,7 @@ export interface JoinRequest {
   user_id: string;
   club_id: string;
   mesaj?: string;
-  durum: "beklemede" | "onaylandi" | "reddedildi";
+  durum: JoinRequestStatus;
   karar_tarihi?: string;
   karar_veren_id?: string;
 }
@@ -86,35 +144,39 @@ export interface JoinRequest {
 export interface Announcement {
   id: string;
   yayinlayan_id: string;
+  yayinlayan_ad: string;
   kapsam: AnnouncementScope;
-  hedef_kitle?: TargetAudience;
-  club_id?: string; // Sistem duyurularında boştur
+  hedef_kitle: TargetAudience;
+  club_id?: string | null;
+  club_ad?: string | null;
   baslik: string;
   icerik: string;
-  yayin_tarihi: string;
+  tarih: string;
 }
 
 // 7. Etkinlik Modeli
 export interface Event {
   id: string;
-  title?: string;
-  name?: string;
-  description?: string;
-  details?: string;
-  location?: string;
-  venue?: string;
-  date?: string;
-  eventDate?: string;
-  quota?: number;
-  targetAudience?: "all" | "admin" | "club_manager";
-  createdBy?: string;
-  createdAt?: string;
-  clubId?: string;
-  club_id?: string;
-  clubName?: string;
-  club_name?: string;
-  participants?: string[];
-  attendees?: string[];
+  baslik: string;
+  aciklama: string;
+  konum: string;
+  tarih: FirestoreDate;
+  kontenjan?: number | null;
+  gorselUrl?: string;
+  hedef_kitle: TargetAudience;
+  club_id?: string | null;
+  club_ad?: string | null;
+  olusturan_id: string;
+  status: EventStatus;
+  katilimcilar: string[];
+  createdAt?: FirestoreDate;
+}
+
+// 7.1 Etkinlik Katılımcısı (başvuru listesi)
+export interface EventApplication {
+  user_id: string;
+  ad_soyad: string;
+  email: string;
 }
 
 // 8. Etkinlik Katılımı (RSVP)
@@ -132,7 +194,7 @@ export interface DigitalIdentity {
   user_id: string;
   secret_key: string;
   olusturulma_tarihi: string;
-  durum: "aktif" | "pasif";
+  durum: ClubStatus;
 }
 
 // 10. Yoklama Kaydı

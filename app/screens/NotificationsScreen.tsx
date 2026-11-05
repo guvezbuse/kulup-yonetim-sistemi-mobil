@@ -9,6 +9,7 @@ import {
   Alert,
 } from "react-native";
 import { announcementService, AnnouncementItem } from "../services/announcementService";
+import { ANNOUNCEMENT_SCOPE, TARGET_AUDIENCE } from "../types";
 import { useAuthStore } from "../store/authStore";
 import CreateAnnouncementModal from "./admin/CreateAnnouncementModal";
 import EditAnnouncementModal from "./admin/EditAnnouncementModal";
@@ -24,11 +25,7 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<AnnouncementItem | null>(null);
 
-  const isSystemAdmin =
-    Boolean(profile?.is_admin) ||
-    profile?.role === "admin" ||
-    profile?.role === "Yönetici" ||
-    profile?.role === "yonetici";
+  const isSystemAdmin = Boolean(profile?.is_admin);
 
   const loadAnnouncements = async () => {
     if (!user) {
@@ -90,7 +87,7 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
   // 4 ÇEŞİT ETİKET RENDERER
   const renderAnnouncementTag = (item: AnnouncementItem) => {
     // 1. Kulüp Duyurusu ise -> Kulüp Adı
-    if (item.kapsam === "kulup") {
+    if (item.kapsam === ANNOUNCEMENT_SCOPE.CLUB) {
       return (
         <View className="bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">
           <Text className="text-indigo-300 text-[10px] font-bold">
@@ -101,7 +98,7 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
     }
 
     // 2. Sistem Duyuruları Hedef Kitleye Göre
-    if (item.hedef_kitle === "tum_yoneticiler") {
+    if (item.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS) {
       return (
         <View className="bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
           <Text className="text-amber-300 text-[10px] font-bold">🛡️ Tüm Yöneticiler</Text>
@@ -109,7 +106,7 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
       );
     }
 
-    if (item.hedef_kitle === "tum_adminler") {
+    if (item.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS) {
       return (
         <View className="bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30">
           <Text className="text-purple-300 text-[10px] font-bold">🔑 Adminler</Text>

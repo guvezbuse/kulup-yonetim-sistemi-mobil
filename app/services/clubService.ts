@@ -7,37 +7,23 @@ import {
   getDocs,
   query,
   orderBy,
-  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Club } from "../types";
+import { CLUB_STATUS, Club, ClubStatus } from "../types";
 
 const CLUBS_COLLECTION = "clubs";
-const INVITATIONS_COLLECTION = "invitations";
 
 export const clubService = {
   // 1. Yeni kulüp oluşturma (Admin)
-  createClub: async (ad: string, aciklama: string, adminId: string, yoneticiEmail?: string) => {
-    // Kulüp dokümanını kaydet
+  createClub: async (ad: string, aciklama: string, adminId: string, gorselUrl: string = "") => {
     const clubRef = await addDoc(collection(db, CLUBS_COLLECTION), {
       ad: ad.trim(),
       aciklama: aciklama.trim(),
       olusturan_admin_id: adminId,
-      durum: "aktif",
+      gorselUrl: gorselUrl.trim(),
+      durum: CLUB_STATUS.ACTIVE,
       createdAt: new Date().toISOString(),
     });
-
-    // İlk yönetici atanmışsa davet (invitations) kaydı aç
-    if (yoneticiEmail && yoneticiEmail.trim()) {
-      await addDoc(collection(db, INVITATIONS_COLLECTION), {
-        club_id: clubRef.id,
-        email: yoneticiEmail.trim().toLowerCase(),
-        role: "yönetici",
-        token: Math.random().toString(36).substring(2, 15), // Mock token
-        son_gecerlilik_tarihi: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        durum: "beklemede",
-      });
-    }
 
     return clubRef.id;
   },
@@ -53,9 +39,10 @@ export const clubService = {
   },
 
   // 3. Kulübü aktif/pasif yapma
-  toggleClubStatus: async (clubId: string, mevcutDurum: "aktif" | "pasif") => {
+  toggleClubStatus: async (clubId: string, mevcutDurum: ClubStatus) => {
     const clubRef = doc(db, CLUBS_COLLECTION, clubId);
-    const yeniDurum = mevcutDurum === "aktif" ? "pasif" : "aktif";
+    const yeniDurum =
+      mevcutDurum === CLUB_STATUS.ACTIVE ? CLUB_STATUS.PASSIVE : CLUB_STATUS.ACTIVE;
     await updateDoc(clubRef, {
       durum: yeniDurum,
     });
@@ -72,7 +59,7 @@ export const clubService = {
     },
   ) => {
     const clubRef = doc(db, CLUBS_COLLECTION, clubId);
-    const updatePayload: Record<string, any> = {};
+    const updatePayload: Record<string, string> = {};
 
     if (data.ad !== undefined) updatePayload.ad = data.ad.trim();
     if (data.aciklama !== undefined) updatePayload.aciklama = data.aciklama.trim();
@@ -88,7 +75,6 @@ export const clubService = {
     const clubRef = doc(db, CLUBS_COLLECTION, clubId);
     await updateDoc(clubRef, {
       gorselUrl: deleteField(),
-      imageUrl: deleteField(),
     });
   },
 };

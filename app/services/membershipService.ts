@@ -10,24 +10,34 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { ClubRole, MembershipStatus } from "../types";
+import { getErrorMessage } from "../lib/errors";
+import {
+  CLUB_ROLE,
+  Club,
+  ClubRole,
+  JOIN_REQUEST_STATUS,
+  JoinRequestStatus,
+  MEMBERSHIP_STATUS,
+  MembershipStatus,
+  isClubManagerRole,
+} from "../types";
 
 export interface JoinRequestItem {
   id: string;
   club_id: string;
   user_id: string;
   user_email: string;
-  user_name?: string;
+  ad_soyad?: string;
   mesaj?: string;
-  durum: "beklemede" | "onaylandi" | "reddedildi";
+  durum: JoinRequestStatus;
   tarih?: string;
 }
 
 export interface ClubMemberDetail {
-  membershipId: string;
-  userId: string;
+  membership_id: string;
+  user_id: string;
   email: string;
-  name?: string;
+  ad_soyad?: string;
   role: ClubRole;
   status: MembershipStatus;
   katilim_tarihi?: string;
@@ -40,7 +50,7 @@ export const membershipService = {
     userId: string,
     userEmail: string,
     mesaj: string = "",
-    userName: string = "",
+    adSoyad: string = "",
   ) => {
     // A) Kullanıcı rolünü kontrol et: Sistem Yöneticisi (Admin) ise engelle
     try {
@@ -48,12 +58,12 @@ export const membershipService = {
       const userSnap = await getDocs(qUser);
       if (!userSnap.empty) {
         const userData = userSnap.docs[0].data();
-        if (userData.role === "admin" || userData.role === "sistem_yoneticisi") {
+        if (userData.is_admin === true) {
           throw new Error("Sistem yöneticileri kulüplere üye olamaz veya başvuru yapamaz.");
         }
       }
-    } catch (err: any) {
-      if (err.message?.includes("Sistem yöneticileri")) {
+    } catch (err) {
+      if (getErrorMessage(err, "").includes("Sistem yöneticileri")) {
         throw err;
       }
       console.log("Kullanıcı rol kontrolü yapılırken uyarı:", err);
@@ -69,8 +79,8 @@ export const membershipService = {
 
     if (!memberSnap.empty) {
       const data = memberSnap.docs[0].data();
-      if (data.status === "aktif") throw new Error("Zaten bu kulübün aktif üyesisiniz.");
-      if (data.status === "beklemede") {
+      if (data.status === MEMBERSHIP_STATUS.ACTIVE) throw new Error("Zaten bu kulübün aktif üyesisiniz.");
+      if (data.status === MEMBERSHIP_STATUS.PENDING) {
         throw new Error("Bu kulüp için zaten bekleyen bir başvurunuz var.");
       }
     }
@@ -80,25 +90,25 @@ export const membershipService = {
       club_id: clubId,
       user_id: userId,
       user_email: userEmail,
-      user_name: userName,
+      ad_soyad: adSoyad,
       mesaj: mesaj.trim(),
-      durum: "beklemede",
+      durum: JOIN_REQUEST_STATUS.PENDING,
       createdAt: serverTimestamp(),
     });
 
     // D) Mükerrer oluşturmamak için: Eğer eski pasif/reddedilmiş kaydı varsa onu güncelle, yoksa yeni aç
     if (!memberSnap.empty) {
       await updateDoc(doc(db, "memberships", memberSnap.docs[0].id), {
-        role: "üye",
-        status: "beklemede",
+        role: CLUB_ROLE.MEMBER,
+        status: MEMBERSHIP_STATUS.PENDING,
         katilim_tarihi: new Date().toISOString(),
       });
     } else {
       await addDoc(collection(db, "memberships"), {
         club_id: clubId,
         user_id: userId,
-        role: "üye",
-        status: "beklemede",
+        role: CLUB_ROLE.MEMBER,
+        status: MEMBERSHIP_STATUS.PENDING,
         katilim_tarihi: new Date().toISOString(),
       });
     }
@@ -111,7 +121,7 @@ export const membershipService = {
     const q = query(
       collection(db, "join_requests"),
       where("club_id", "==", clubId),
-      where("durum", "==", "beklemede"),
+      where("durum", "==", JOIN_REQUEST_STATUS.PENDING),
     );
     const snap = await getDocs(q);
     return snap.docs.map((docSnap) => ({
@@ -133,16 +143,16 @@ export const membershipService = {
       await addDoc(collection(db, "memberships"), {
         club_id: clubId,
         user_id: userId,
-        role: "üye",
-        status: "aktif",
+        role: CLUB_ROLE.MEMBER,
+        status: MEMBERSHIP_STATUS.ACTIVE,
         katilim_tarihi: new Date().toISOString(),
       });
     } else {
       // Varsa ilk dokümanı aktif yap
       const primaryDoc = existingSnap.docs[0];
       await updateDoc(doc(db, "memberships", primaryDoc.id), {
-        status: "aktif",
-        role: "üye",
+        status: MEMBERSHIP_STATUS.ACTIVE,
+        role: CLUB_ROLE.MEMBER,
       });
 
       // Eğer birden fazla doküman oluşmuşsa temizle
@@ -154,7 +164,7 @@ export const membershipService = {
     }
 
     await updateDoc(doc(db, "join_requests", requestId), {
-      durum: "onaylandi",
+      durum: JOIN_REQUEST_STATUS.APPROVED,
       updatedAt: serverTimestamp(),
     });
   },
@@ -162,7 +172,7 @@ export const membershipService = {
   // 4. Başvuruyu Reddetme
   rejectRequest: async (requestId: string, clubId: string, userId: string) => {
     await updateDoc(doc(db, "join_requests", requestId), {
-      durum: "reddedildi",
+      durum: JOIN_REQUEST_STATUS.REJECTED,
       karar_tarihi: new Date().toISOString(),
     });
 
@@ -174,7 +184,7 @@ export const membershipService = {
     const memberSnap = await getDocs(qMember);
     if (!memberSnap.empty) {
       await updateDoc(doc(db, "memberships", memberSnap.docs[0].id), {
-        status: "reddedildi",
+        status: MEMBERSHIP_STATUS.REJECTED,
       });
     }
   },
@@ -192,8 +202,8 @@ export const membershipService = {
       const docData = snap.docs[0].data();
       return {
         id: snap.docs[0].id,
-        role: docData.role || "üye",
-        status: docData.status || "beklemede",
+        role: (docData.role || CLUB_ROLE.MEMBER) as ClubRole,
+        status: (docData.status || MEMBERSHIP_STATUS.PENDING) as MembershipStatus,
       };
     } catch (error) {
       console.log("getUserMembership hatası:", error);
@@ -210,7 +220,11 @@ export const membershipService = {
     );
     const snap = await getDocs(q);
     if (snap.empty) return null;
-    return snap.docs[0].data() as { role: ClubRole; status: MembershipStatus };
+    const data = snap.docs[0].data();
+    return {
+      role: (data.role || CLUB_ROLE.MEMBER) as ClubRole,
+      status: (data.status || MEMBERSHIP_STATUS.PENDING) as MembershipStatus,
+    };
   },
 
   // 7. Bir kulübün tüm üyelerini ve yöneticilerini çekme (Mükerrerleri filtreler)
@@ -223,14 +237,14 @@ export const membershipService = {
 
     for (const memberDoc of memberSnap.docs) {
       const mData = memberDoc.data();
-      if (mData.status === "aktif" || mData.status === "pasif") {
+      if (mData.status === MEMBERSHIP_STATUS.ACTIVE || mData.status === MEMBERSHIP_STATUS.PASSIVE) {
         if (seenUserIds.has(mData.user_id)) {
           continue;
         }
         seenUserIds.add(mData.user_id);
 
         let email = "Bilinmeyen Kullanıcı";
-        let name = "";
+        let ad_soyad = "";
 
         try {
           const userDocSnap = await getDocs(
@@ -239,18 +253,18 @@ export const membershipService = {
           if (!userDocSnap.empty) {
             const uData = userDocSnap.docs[0].data();
             email = uData.email || email;
-            name = uData.name ? `${uData.name} ${uData.surname || ""}`.trim() : "";
+            ad_soyad = uData.ad ? `${uData.ad} ${uData.soyad || ""}`.trim() : "";
           }
         } catch (e) {
           console.log("Kullanıcı detayı alınamadı:", e);
         }
 
         members.push({
-          membershipId: memberDoc.id,
-          userId: mData.user_id,
+          membership_id: memberDoc.id,
+          user_id: mData.user_id,
           email,
-          name,
-          role: mData.role,
+          ad_soyad,
+          role: (mData.role || CLUB_ROLE.MEMBER) as ClubRole,
           status: mData.status,
           katilim_tarihi: mData.katilim_tarihi,
         });
@@ -262,7 +276,10 @@ export const membershipService = {
 
   // 8. Üyenin aktif/pasif durumunu değiştirme
   toggleMemberStatus: async (membershipId: string, currentStatus: MembershipStatus) => {
-    const nextStatus: MembershipStatus = currentStatus === "aktif" ? "pasif" : "aktif";
+    const nextStatus: MembershipStatus =
+      currentStatus === MEMBERSHIP_STATUS.ACTIVE
+        ? MEMBERSHIP_STATUS.PASSIVE
+        : MEMBERSHIP_STATUS.ACTIVE;
     await updateDoc(doc(db, "memberships", membershipId), {
       status: nextStatus,
     });
@@ -271,8 +288,9 @@ export const membershipService = {
 
   // 9. Üyenin rolünü değiştirme (Üye <-> Yönetici)
   toggleMemberRole: async (membershipId: string, currentRole: ClubRole) => {
-    const isYonetici = currentRole === "yonetici" || (currentRole as any) === "yönetici";
-    const nextRole: ClubRole = isYonetici ? ("üye" as ClubRole) : ("yonetici" as ClubRole);
+    const nextRole: ClubRole = isClubManagerRole(currentRole)
+      ? CLUB_ROLE.MEMBER
+      : CLUB_ROLE.MANAGER;
     await updateDoc(doc(db, "memberships", membershipId), {
       role: nextRole,
     });
@@ -282,5 +300,49 @@ export const membershipService = {
   // 10. Kulüpten Üye Silme / Çıkarma
   removeMemberFromClub: async (membershipId: string) => {
     await deleteDoc(doc(db, "memberships", membershipId));
+  },
+
+  // 11. Kullanıcı bu kulübün aktif yöneticisi mi?
+  isClubManager: async (clubId: string, userId: string): Promise<boolean> => {
+    const q = query(
+      collection(db, "memberships"),
+      where("club_id", "==", clubId),
+      where("user_id", "==", userId),
+      where("role", "==", CLUB_ROLE.MANAGER),
+      where("status", "==", MEMBERSHIP_STATUS.ACTIVE),
+    );
+    const snap = await getDocs(q);
+    return !snap.empty;
+  },
+
+  // 12. Kullanıcının aktif yönetici olduğu kulüpler
+  getManagedClubs: async (userId: string): Promise<Club[]> => {
+    const q = query(
+      collection(db, "memberships"),
+      where("user_id", "==", userId),
+      where("role", "==", CLUB_ROLE.MANAGER),
+      where("status", "==", MEMBERSHIP_STATUS.ACTIVE),
+    );
+    const snap = await getDocs(q);
+
+    const clubIds = new Set(snap.docs.map((memberDoc) => memberDoc.data().club_id as string));
+    if (clubIds.size === 0) return [];
+
+    const clubsSnap = await getDocs(collection(db, "clubs"));
+    return clubsSnap.docs
+      .filter((clubDoc) => clubIds.has(clubDoc.id))
+      .map((clubDoc) => ({ id: clubDoc.id, ...clubDoc.data() }) as Club);
+  },
+
+  // 13. Kullanıcı herhangi bir kulüpte aktif yönetici mi?
+  isManagerOfAnyClub: async (userId: string): Promise<boolean> => {
+    const q = query(
+      collection(db, "memberships"),
+      where("user_id", "==", userId),
+      where("role", "==", CLUB_ROLE.MANAGER),
+      where("status", "==", MEMBERSHIP_STATUS.ACTIVE),
+    );
+    const snap = await getDocs(q);
+    return !snap.empty;
   },
 };

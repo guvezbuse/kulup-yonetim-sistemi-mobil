@@ -6,16 +6,43 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAGcG79ixfoDZx9Hn_27wWIUs9q4Vx59sI",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "kulup-yonetim-sistemi-mobil.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "kulup-yonetim-sistemi-mobil",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "kulup-yonetim-sistemi-mobil.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "709129123789",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:709129123789:web:d792de494e8be99bba7684",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-2G26N0JYBM"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAGcG79ixfoDZx9Hn_27wWIUs9q4Vx59sI",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "kulup-yonetim-sistemi-mobil.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "kulup-yonetim-sistemi-mobil",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "kulup-yonetim-sistemi-mobil.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "709129123789",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:709129123789:web:d792de494e8be99bba7684",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-2G26N0JYBM"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAGcG79ixfoDZx9Hn_27wWIUs9q4Vx59sI",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "kulup-yonetim-sistemi-mobil.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "kulup-yonetim-sistemi-mobil",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "kulup-yonetim-sistemi-mobil.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "709129123789",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:709129123789:web:d792de494e8be99bba7684",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-2G26N0JYBM"
+      }
     }
   },
   "submit": {

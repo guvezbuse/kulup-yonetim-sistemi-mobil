@@ -12,6 +12,7 @@ import { Input } from "../components/Input";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { invitationService, InvitationItem } from "../services/invitationService";
+import { getErrorMessage } from "../lib/errors";
 import * as Clipboard from "expo-clipboard";
 
 interface InviteAcceptScreenProps {
@@ -85,8 +86,8 @@ export function InviteAcceptScreen({
         "Davet Bulundu! 🎉",
         `Hoş geldiniz! ${invite.email} adresi için davet doğrulandı.`,
       );
-    } catch (err: any) {
-      Alert.alert("Geçersiz Davet", err.message || "Geçersiz davet kodu veya bağlantısı!");
+    } catch (err) {
+      Alert.alert("Geçersiz Davet", getErrorMessage(err, "Geçersiz davet kodu veya bağlantısı!"));
       setVerifiedInvite(null);
     } finally {
       setChecking(false);
@@ -116,10 +117,10 @@ export function InviteAcceptScreen({
     try {
       await invitationService.acceptInvitation({
         invite: verifiedInvite,
-        name: name.trim(),
-        surname: surname.trim(),
+        ad: name.trim(),
+        soyad: surname.trim(),
         password,
-        studentNo: studentNo.trim(),
+        student_no: studentNo.trim(),
       });
 
       Alert.alert(
@@ -127,8 +128,8 @@ export function InviteAcceptScreen({
         "Hesabınız başarıyla oluşturuldu ve kulübe dahil edildiniz. Giriş yapabilirsiniz.",
         [{ text: "Giriş Yap", onPress: onSuccess }],
       );
-    } catch (err: any) {
-      Alert.alert("Kayıt Hatası", err.message || "İşlem sırasında bir hata oluştu.");
+    } catch (err) {
+      Alert.alert("Kayıt Hatası", getErrorMessage(err, "İşlem sırasında bir hata oluştu."));
     } finally {
       setSubmitting(false);
     }

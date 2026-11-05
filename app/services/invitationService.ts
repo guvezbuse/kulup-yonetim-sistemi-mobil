@@ -12,17 +12,14 @@ import {
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../lib/firebase";
-import { ClubRole } from "../types";
+import {
+  ClubRole,
+  INVITATION_STATUS,
+  Invitation,
+  MEMBERSHIP_STATUS,
+} from "../types";
 
-export interface InvitationItem {
-  id: string;
-  email: string;
-  club_id: string;
-  role: ClubRole;
-  token: string;
-  son_gecerlilik_tarihi: string;
-  durum: "beklemede" | "kabul_edildi" | "iptal";
-}
+export type InvitationItem = Invitation;
 
 export interface InviteResult {
   type: "direct_membership" | "invitation_created";
@@ -37,7 +34,7 @@ export const invitationService = {
     const q = query(
       collection(db, "invitations"),
       where("club_id", "==", clubId),
-      where("durum", "==", "beklemede"),
+      where("durum", "==", INVITATION_STATUS.PENDING),
     );
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({
@@ -79,7 +76,7 @@ export const invitationService = {
         club_id: clubId,
         user_id: userId,
         role: role,
-        status: "aktif",
+        status: MEMBERSHIP_STATUS.ACTIVE,
         katilim_tarihi: new Date().toISOString(),
       });
 
@@ -103,7 +100,7 @@ export const invitationService = {
       role: role,
       token: token,
       son_gecerlilik_tarihi: expiresAt,
-      durum: "beklemede",
+      durum: INVITATION_STATUS.PENDING,
       createdAt: serverTimestamp(),
     });
 
@@ -125,7 +122,7 @@ export const invitationService = {
     await updateDoc(doc(db, "invitations", inviteId), {
       token: token,
       son_gecerlilik_tarihi: expiresAt,
-      durum: "beklemede",
+      durum: INVITATION_STATUS.PENDING,
     });
 
     return {
@@ -166,26 +163,29 @@ export const invitationService = {
   // 5. Daveti Kabul Ederek Kayıt Olma & Daveti Veritabanından Silme
   acceptInvitation: async ({
     invite,
-    name,
-    surname,
+    ad,
+    soyad,
     password,
-    studentNo,
+    student_no,
   }: {
     invite: InvitationItem;
-    name: string;
-    surname: string;
+    ad: string;
+    soyad: string;
     password: string;
-    studentNo?: string;
+    student_no?: string;
   }) => {
     const userCredential = await createUserWithEmailAndPassword(auth, invite.email, password);
     const user = userCredential.user;
 
     await setDoc(doc(db, "users", user.uid), {
-      id: user.uid,
-      name,
-      surname,
+      uid: user.uid,
+      ad,
+      soyad,
       email: invite.email,
-      student_no: studentNo || "",
+      telefon: "",
+      student_no: student_no || "",
+      bolum: "",
+      avatarUrl: "",
       is_admin: false,
       createdAt: serverTimestamp(),
     });
@@ -194,7 +194,7 @@ export const invitationService = {
       club_id: invite.club_id,
       user_id: user.uid,
       role: invite.role,
-      status: "aktif",
+      status: MEMBERSHIP_STATUS.ACTIVE,
       katilim_tarihi: new Date().toISOString(),
     });
 
