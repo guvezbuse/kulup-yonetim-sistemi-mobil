@@ -72,11 +72,16 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
           const d =
             typeof event.tarih === "string"
               ? new Date(event.tarih.replace(" ", "T"))
-              : new Date(event.tarih.seconds * 1000);
-          const pad = (n: number) => n.toString().padStart(2, "0");
-          setTarihGirdi(
-            `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
-          );
+              : typeof event.tarih === "object" && typeof event.tarih.seconds === "number"
+                ? new Date(event.tarih.seconds * 1000)
+                : null;
+
+          if (d && !isNaN(d.getTime())) {
+            const pad = (n: number) => n.toString().padStart(2, "0");
+            setTarihGirdi(
+              `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+            );
+          }
         }
       } catch (error) {
         console.log("Etkinlik yükleme hatası:", error);

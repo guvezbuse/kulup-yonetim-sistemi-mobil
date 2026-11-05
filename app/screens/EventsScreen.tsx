@@ -116,12 +116,15 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
     const raw = item.tarih;
     if (!raw) return null;
 
-    if (typeof raw !== "string") {
-      return new Date(raw.seconds * 1000);
+    if (typeof raw === "string") {
+      const d = new Date(raw.replace(" ", "T"));
+      return isNaN(d.getTime()) ? null : d;
     }
 
-    const d = new Date(raw.replace(" ", "T"));
-    if (!isNaN(d.getTime())) return d;
+    if (typeof raw === "object" && typeof raw.seconds === "number") {
+      const d = new Date(raw.seconds * 1000);
+      return isNaN(d.getTime()) ? null : d;
+    }
 
     return null;
   };
@@ -146,7 +149,11 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
     if (!raw) return "";
 
     const d =
-      typeof raw === "string" ? new Date(raw) : new Date(raw.seconds * 1000);
+      typeof raw === "string"
+        ? new Date(raw)
+        : typeof raw === "object" && typeof raw.seconds === "number"
+          ? new Date(raw.seconds * 1000)
+          : new Date(NaN);
     if (isNaN(d.getTime())) return "";
 
     const pad = (num: number) => num.toString().padStart(2, "0");
