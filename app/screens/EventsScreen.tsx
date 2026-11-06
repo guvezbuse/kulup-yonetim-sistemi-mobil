@@ -1,18 +1,19 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  Alert,
   ActivityIndicator,
-  RefreshControl,
+  Alert,
+  FlatList,
   Image,
+  RefreshControl,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useAuthStore } from "../store/authStore";
-import { getEvents, deleteEvent, joinEvent, leaveEvent } from "../services/eventService";
-import { membershipService } from "../services/membershipService";
 import { getErrorMessage } from "../lib/errors";
+import { formatEventDate, formatShortDateTime, toDate } from "../lib/eventDate";
+import { deleteEvent, getEvents, joinEvent, leaveEvent } from "../services/eventService";
+import { membershipService } from "../services/membershipService";
+import { useAuthStore } from "../store/authStore";
 import { EVENT_STATUS, Event, TARGET_AUDIENCE } from "../types";
 
 interface EventsScreenProps {
@@ -21,68 +22,65 @@ interface EventsScreenProps {
   };
 }
 
+type EventTab = "upcoming" | "past";
+
 export default function EventsScreen({ navigation }: EventsScreenProps) {
   const user = useAuthStore((state) => state.user);
   const profile = useAuthStore((state) => state.profile);
 
-  const [isClubManager, setIsClubManager] = useState<boolean>(false);
+  const isAdmin = profile?.is_admin === true;
+  const [isClubManager, setIsClubManager] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const [tab, setTab] = useState<EventTab>("upcoming");
 
-  const isAdmin = profile?.is_admin === true;
-
-  // Yönetici olduğu kulüpleri kontrol et
   useEffect(() => {
     const checkClubManager = async () => {
-      if (!user) {
+      if (!user || isAdmin) {
         setIsClubManager(false);
         return;
       }
 
       try {
-        const isManager = await membershipService.isManagerOfAnyClub(user.uid);
-        setIsClubManager(isManager);
-      } catch (e) {
-        console.log("Kulüp yöneticisi kontrol hatası:", e);
+        setIsClubManager(await membershipService.isManagerOfAnyClub(user.uid));
+      } catch (error) {
+        console.log("Kulüp yöneticisi kontrol hatası:", error);
         setIsClubManager(false);
       }
     };
 
     checkClubManager();
-  }, [user]);
+  }, [user, isAdmin]);
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
-      const data = await getEvents();
-      setEvents(data);
+      setEvents(await getEvents());
     } catch (error) {
-      console.error("Etkinlik çekme hatası:", error);
-      Alert.alert("Hata", "Etkinlikler yüklenirken bir hata oluştu.");
+      Alert.alert("Hata", getErrorMessage(error, "Etkinlikler yüklenirken bir hata oluştu."));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, [fetchEvents]);
 
-  const handleDelete = (eventId: string) => {
-    Alert.alert("Etkinliği Sil", "Bu etkinliği silmek istediğinizden emin misiniz?", [
+  const handleDelete = (event: Event) => {
+    Alert.alert("Etkinliği Sil", `"${event.baslik}" kalıcı olarak silinecek. Emin misiniz?`, [
       { text: "İptal", style: "cancel" },
       {
         text: "Sil",
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteEvent(eventId);
-            setEvents((prev) => prev.filter((e) => e.id !== eventId));
+            await deleteEvent(event.id);
+            setEvents((previous) => previous.filter((item) => item.id !== event.id));
             Alert.alert("Başarılı", "Etkinlik silindi.");
-          } catch {
-            Alert.alert("Hata", "Etkinlik silinemedi.");
+          } catch (error) {
+            Alert.alert("Hata", getErrorMessage(error, "Etkinlik silinemedi."));
           }
         },
       },
@@ -92,10 +90,11 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
   const handleRSVP = async (event: Event) => {
     if (!user) return;
 
-    const isAttending = event.katilimcilar.includes(user.uid);
+    const katilimcilar = event.katilimcilar || [];
+    const isAttending = katilimcilar.includes(user.uid);
     const kontenjan = event.kontenjan ?? null;
 
-    if (!isAttending && kontenjan !== null && event.katilimcilar.length >= kontenjan) {
+    if (!isAttending && kontenjan !== null && katilimcilar.length >= kontenjan) {
       Alert.alert("Kontenjan Dolu", "Maalesef bu etkinliğin kontenjanı dolmuştur.");
       return;
     }
@@ -106,96 +105,41 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
       } else {
         await joinEvent(event.id, user.uid);
       }
-      fetchEvents();
-    } catch (err) {
-      Alert.alert("Hata", getErrorMessage(err, "İşlem gerçekleştirilemedi."));
+      await fetchEvents();
+    } catch (error) {
+      Alert.alert("Hata", getErrorMessage(error, "İşlem gerçekleştirilemedi."));
     }
   };
 
-  const getCleanDate = (item: Event): Date | null => {
-    const raw = item.tarih;
-    if (!raw) return null;
+  const nowTime = Date.now();
 
-    if (typeof raw === "string") {
-      const d = new Date(raw.replace(" ", "T"));
-      return isNaN(d.getTime()) ? null : d;
-    }
+  const visibleEvents = events
+    .filter((event) => {
+      // Taslaklar yalnızca Taslaklar ekranında görünür.
+      if (event.status === EVENT_STATUS.DRAFT) return false;
 
-    if (typeof raw === "object" && typeof raw.seconds === "number") {
-      const d = new Date(raw.seconds * 1000);
-      return isNaN(d.getTime()) ? null : d;
-    }
+      if (event.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS && !isAdmin) return false;
+      if (event.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS && !isAdmin && !isClubManager) {
+        return false;
+      }
 
-    return null;
-  };
+      const eventDate = toDate(event.tarih);
+      if (!eventDate) return tab === "upcoming";
 
-  const formatEventDate = (item: Event): string => {
-    const d = getCleanDate(item);
-    if (!d) {
-      return typeof item.tarih === "string" && item.tarih.trim() ? item.tarih : "Tarih Belirtilmedi";
-    }
-
-    return d.toLocaleDateString("tr-TR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+      return tab === "upcoming" ? eventDate.getTime() >= nowTime : eventDate.getTime() < nowTime;
+    })
+    .sort((a, b) => {
+      const aTime = toDate(a.tarih)?.getTime() ?? 0;
+      const bTime = toDate(b.tarih)?.getTime() ?? 0;
+      return tab === "upcoming" ? aTime - bTime : bTime - aTime;
     });
-  };
-
-  const formatPublishedDate = (item: Event): string => {
-    const raw = item.createdAt;
-    if (!raw) return "";
-
-    const d =
-      typeof raw === "string"
-        ? new Date(raw)
-        : typeof raw === "object" && typeof raw.seconds === "number"
-          ? new Date(raw.seconds * 1000)
-          : new Date(NaN);
-    if (isNaN(d.getTime())) return "";
-
-    const pad = (num: number) => num.toString().padStart(2, "0");
-    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
-  const nowTime = new Date().getTime();
-
-  const filteredEvents = events.filter((e: Event) => {
-    if (e.status === EVENT_STATUS.DRAFT && !isAdmin && !isClubManager) return false;
-
-    if (e.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS && !isAdmin) return false;
-    if (e.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS && !isAdmin && !isClubManager) return false;
-
-    const eventDate = getCleanDate(e);
-
-    if (!eventDate) {
-      return tab === "upcoming";
-    }
-
-    const eventTime = eventDate.getTime();
-
-    if (tab === "upcoming") {
-      return eventTime >= nowTime;
-    }
-    return eventTime < nowTime;
-  });
 
   const renderEventCard = ({ item }: { item: Event }) => {
-    const isAttending = item.katilimcilar.includes(user?.uid || "");
+    const participants = item.katilimcilar || [];
+    const isAttending = participants.includes(user?.uid || "");
     const isClubEvent = !!item.club_id;
-
-    const title = item.baslik || "İsimsiz Etkinlik";
-    const description = item.aciklama || "";
-    const location = item.konum || "Konum Belirtilmedi";
-    const imageUrl = item.gorselUrl || "";
-    const eventDateStr = formatEventDate(item);
-    const publishedDateStr = formatPublishedDate(item);
-
     const kontenjan = item.kontenjan ?? null;
-    const currentAttendeeCount = item.katilimcilar.length;
-    const isFull = kontenjan !== null && currentAttendeeCount >= kontenjan;
+    const isFull = kontenjan !== null && participants.length >= kontenjan;
 
     let badgeText = "Genel Etkinlik";
     let badgeBg = "bg-indigo-500/20";
@@ -217,9 +161,9 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
 
     return (
       <View className="bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700">
-        {!!imageUrl && (
+        {!!item.gorselUrl && (
           <Image
-            source={{ uri: imageUrl }}
+            source={{ uri: item.gorselUrl }}
             className="w-full h-40 rounded-lg mb-3 bg-slate-700"
             resizeMode="cover"
           />
@@ -231,30 +175,22 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
               <View className={`px-2 py-0.5 rounded ${badgeBg}`}>
                 <Text className={`text-xs font-semibold ${badgeTextClr}`}>{badgeText}</Text>
               </View>
-              {item.status === EVENT_STATUS.DRAFT && (
-                <View className="px-2 py-0.5 rounded bg-yellow-500/20">
-                  <Text className="text-xs font-semibold text-yellow-400">Taslak</Text>
-                </View>
-              )}
             </View>
-            <Text className="text-white font-bold text-lg">{title}</Text>
+            <Text className="text-white font-bold text-lg">{item.baslik}</Text>
           </View>
 
           {isAdmin && (
             <View className="flex-row items-center gap-2">
-              {!isClubEvent && (
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation?.navigate("EditEventScreen", { eventId: item.id })
-                  }
-                  className="p-1.5 bg-slate-700 rounded-md"
-                >
-                  <Text className="text-xs">✏️</Text>
-                </TouchableOpacity>
-              )}
               <TouchableOpacity
-                onPress={() => handleDelete(item.id)}
-                className="p-1.5 bg-rose-500/20 rounded-md border border-rose-500/30"
+                onPress={() => navigation?.navigate("EditEventScreen", { eventId: item.id })}
+                className="p-2 bg-slate-700 rounded-lg active:opacity-80"
+              >
+                <Text className="text-xs">✏️</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleDelete(item)}
+                className="p-2 bg-rose-500/20 rounded-lg border border-rose-500/30 active:opacity-80"
               >
                 <Text className="text-xs">🗑️</Text>
               </TouchableOpacity>
@@ -262,37 +198,56 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
           )}
         </View>
 
-        {!!description && <Text className="text-slate-300 text-sm mb-3">{description}</Text>}
+        {!!item.aciklama && <Text className="text-slate-300 text-sm mb-3">{item.aciklama}</Text>}
 
         <View className="flex-row items-end justify-between border-t border-slate-700/60 pt-3 mt-1">
           <View className="flex-1 mr-2">
-            <Text className="text-slate-400 text-xs">📅 {eventDateStr}</Text>
-            <Text className="text-slate-400 text-xs mt-0.5">📍 {location}</Text>
-
+            <Text className="text-slate-400 text-xs">📅 {formatEventDate(item.tarih)}</Text>
+            <Text className="text-slate-400 text-xs mt-0.5">
+              📍 {item.konum || "Konum belirtilmedi"}
+            </Text>
             <Text className="text-indigo-300 font-medium text-xs mt-1">
-              👥 Katılımcı: {currentAttendeeCount}{" "}
+              👥 Katılımcı: {participants.length}{" "}
               {kontenjan !== null ? `/ ${kontenjan}` : "(Sınırsız)"}
             </Text>
           </View>
 
-          {!isAdmin && tab === "upcoming" && (
-            <TouchableOpacity
-              onPress={() => handleRSVP(item)}
-              disabled={isFull && !isAttending}
-              className={`px-4 py-2 rounded-lg ${
-                isAttending ? "bg-emerald-600" : isFull ? "bg-slate-700" : "bg-indigo-600"
-              }`}
-            >
-              <Text className="text-white text-xs font-bold">
-                {isAttending ? "Katıldınız ✓" : isFull ? "Kontenjan Dolu" : "Etkinliğe Katıl"}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <View className="items-end gap-2">
+            {tab === "upcoming" && (
+              <TouchableOpacity
+                onPress={() => handleRSVP(item)}
+                disabled={isFull && !isAttending}
+                className={`px-4 py-2 rounded-lg ${
+                  isAttending ? "bg-emerald-600" : isFull ? "bg-slate-700" : "bg-indigo-600"
+                }`}
+              >
+                <Text className="text-white text-xs font-bold">
+                  {isAttending ? "Katıldınız ✓" : isFull ? "Kontenjan Dolu" : "Etkinliğe Katıl"}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isAdmin && item.status !== EVENT_STATUS.CANCELLED && (
+              <TouchableOpacity
+                onPress={() =>
+                  navigation?.navigate("Attendance", {
+                    eventId: item.id,
+                    eventTitle: item.baslik,
+                  })
+                }
+                className="px-4 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30"
+              >
+                <Text className="text-emerald-400 text-xs font-bold">📷 Yoklama Al</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        {!!publishedDateStr && (
+        {!!item.createdAt && (
           <View className="items-end mt-2">
-            <Text className="text-slate-400 text-[11px] font-medium">{publishedDateStr}</Text>
+            <Text className="text-slate-500 text-[10px]">
+              Oluşturuldu: {formatShortDateTime(item.createdAt)}
+            </Text>
           </View>
         )}
       </View>
@@ -301,22 +256,37 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
 
   return (
     <View className="flex-1 bg-slate-900 p-4">
-      <View className="flex-row justify-between items-center mb-4">
-        <Text className="text-2xl font-bold text-white">Etkinlikler</Text>
-        {(isAdmin || isClubManager) && (
+      {isAdmin ? (
+        <View className="flex-row items-center gap-3 mb-4">
+          <TouchableOpacity
+            onPress={() => navigation?.navigate("Drafts")}
+            activeOpacity={0.7}
+            className="flex-1 bg-slate-800 border border-slate-700 py-3.5 rounded-xl items-center justify-center"
+          >
+            <Text className="text-slate-200 font-bold text-xs">📋 Taslaklar</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => navigation?.navigate("CreateEvent")}
-            className="bg-indigo-600 px-3 py-2 rounded-lg"
+            activeOpacity={0.7}
+            className="flex-1 bg-indigo-600 py-3.5 rounded-xl items-center justify-center shadow-md"
           >
-            <Text className="text-white font-semibold text-xs">+ Yeni</Text>
+            <Text className="text-white font-bold text-xs">+ Yeni Etkinlik</Text>
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      ) : (
+        <View className="mb-4">
+          <Text className="text-2xl font-bold text-white">Etkinlikler</Text>
+          <Text className="text-slate-400 text-xs mt-0.5">
+            Kulüp etkinliklerini keşfedin ve katılım sağlayın
+          </Text>
+        </View>
+      )}
 
       <View className="flex-row bg-slate-800 p-1 rounded-xl mb-4">
         <TouchableOpacity
           onPress={() => setTab("upcoming")}
-          className={`flex-1 py-2 rounded-lg items-center ${
+          className={`flex-1 py-2.5 rounded-lg items-center ${
             tab === "upcoming" ? "bg-indigo-600" : ""
           }`}
         >
@@ -328,9 +298,12 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
             Yaklaşan Etkinlikler
           </Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => setTab("past")}
-          className={`flex-1 py-2 rounded-lg items-center ${tab === "past" ? "bg-indigo-600" : ""}`}
+          className={`flex-1 py-2.5 rounded-lg items-center ${
+            tab === "past" ? "bg-indigo-600" : ""
+          }`}
         >
           <Text
             className={`font-semibold text-xs ${tab === "past" ? "text-white" : "text-slate-400"}`}
@@ -344,12 +317,15 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
         <ActivityIndicator size="large" color="#6366f1" className="mt-10" />
       ) : (
         <FlatList
-          data={filteredEvents}
+          data={visibleEvents}
           keyExtractor={(item) => item.id}
           renderItem={renderEventCard}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 24 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
+              tintColor="#6366f1"
               onRefresh={() => {
                 setRefreshing(true);
                 fetchEvents();
@@ -357,9 +333,17 @@ export default function EventsScreen({ navigation }: EventsScreenProps) {
             />
           }
           ListEmptyComponent={
-            <Text className="text-slate-500 text-center mt-10">
-              {tab === "upcoming" ? "Yaklaşan etkinlik bulunmuyor." : "Geçmiş etkinlik bulunmuyor."}
-            </Text>
+            <View className="items-center justify-center py-16">
+              <Text className="text-4xl mb-3">📅</Text>
+              <Text className="text-white font-bold text-base">
+                {tab === "upcoming" ? "Yaklaşan etkinlik yok" : "Geçmiş etkinlik yok"}
+              </Text>
+              <Text className="text-slate-400 text-xs text-center mt-1">
+                {tab === "upcoming"
+                  ? "Yeni etkinlikler yayınlandığında burada görünecek."
+                  : "Katıldığınız etkinlikler burada listelenecek."}
+              </Text>
+            </View>
           }
         />
       )}

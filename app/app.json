@@ -30,7 +30,21 @@
     "plugins": [
       "expo-font",
       "expo-status-bar",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Profil fotoğrafınızı seçebilmek için galeri erişimine ihtiyacımız var."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Etkinlik yoklaması için üyelerin QR kodlarını okutmak üzere kamera erişimine ihtiyacımız var.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ]
     ]
   }
 }

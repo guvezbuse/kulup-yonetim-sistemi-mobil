@@ -203,5 +203,5 @@ export interface Attendance {
   event_id: string;
   user_id: string;
   alan_yonetici_id: string;
-  zaman_damgasi: string;
+  zaman_damgasi: FirestoreDate;
 }

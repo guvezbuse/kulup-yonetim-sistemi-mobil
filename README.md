@@ -15,7 +15,7 @@ süreçlerini tek bir mobil çatı altında yönetmesini sağlayan çapraz platf
 - **Programlama Dili:** TypeScript
 - **Stil & Arayüz:** NativeWind 4 (Tailwind CSS 3.4)
 - **Durum Yönetimi:** Zustand
-- **Backend:** Firebase Authentication + Cloud Firestore
+- **Backend:** Firebase Authentication + Cloud Firestore + Firebase Storage
 - **Bildirim:** Expo Notifications (push + uygulama içi bildirim geçmişi)
 - **Kod Standartları:** ESLint 9 (flat config) & Prettier
 

@@ -43,6 +43,13 @@ export interface ClubMemberDetail {
   katilim_tarihi?: string;
 }
 
+export interface UserClub extends Club {
+  membership_id: string;
+  role: ClubRole;
+  status: MembershipStatus;
+  katilim_tarihi?: string;
+}
+
 export const membershipService = {
   // 1. Öğrencinin kulübe başvuru yapması (Sistem Yöneticisi Engelli)
   applyToClub: async (
@@ -344,5 +351,49 @@ export const membershipService = {
     );
     const snap = await getDocs(q);
     return !snap.empty;
+  },
+
+  // 14. Kullanıcının aktif üyeliklerini kulüp bilgisiyle getir
+  getUserClubs: async (userId: string): Promise<UserClub[]> => {
+    const q = query(collection(db, "memberships"), where("user_id", "==", userId));
+    const membershipSnap = await getDocs(q);
+    const activeMemberships = membershipSnap.docs.filter(
+      (membershipDoc) => membershipDoc.data().status === MEMBERSHIP_STATUS.ACTIVE,
+    );
+
+    if (activeMemberships.length === 0) return [];
+
+    const clubsSnap = await getDocs(collection(db, "clubs"));
+    const clubMap = new Map(
+      clubsSnap.docs.map((clubDoc) => {
+        const data = clubDoc.data();
+        return [
+          clubDoc.id,
+          {
+            ...data,
+            id: clubDoc.id,
+            gorselUrl: data.gorselUrl || "",
+            detayliAciklama: data.detayliAciklama || "",
+          } as Club,
+        ];
+      }),
+    );
+
+    return activeMemberships
+      .map((membershipDoc): UserClub | null => {
+        const data = membershipDoc.data();
+        const club = clubMap.get(data.club_id as string);
+        if (!club) return null;
+
+        return {
+          ...club,
+          membership_id: membershipDoc.id,
+          role: (data.role || CLUB_ROLE.MEMBER) as ClubRole,
+          status: data.status as MembershipStatus,
+          katilim_tarihi: data.katilim_tarihi as string | undefined,
+        };
+      })
+      .filter((club): club is UserClub => club !== null)
+      .sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
   },
 };

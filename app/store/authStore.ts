@@ -5,11 +5,13 @@ import {
   signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  updateEmail,
   User as FirebaseUser,
 } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { getErrorMessage } from "../lib/errors";
+import { userService, UserProfileUpdate } from "../services/userService";
 import { User } from "../types";
 
 interface AuthState {
@@ -29,6 +31,7 @@ interface AuthState {
   }) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateProfile: (data: UserProfileUpdate) => Promise<void>;
   clearError: () => void;
 }
 
@@ -160,5 +163,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ error: getErrorMessage(err, "İşlem başarısız."), loading: false });
       throw err;
     }
+  },
+
+  // Profil alanlarını Firestore ve Auth tarafında tek akışta güncelle
+  updateProfile: async (data: UserProfileUpdate) => {
+    const currentProfile = get().profile;
+    if (!currentProfile) {
+      throw new Error("Profil bilgileri yüklenemedi.");
+    }
+
+    const nextEmail = data.email?.trim();
+    const emailChanged = !!nextEmail && nextEmail !== currentProfile.email;
+
+    if (emailChanged && auth.currentUser) {
+      // Giriş adresi Auth tarafında da güncellenmezse sonraki giriş başarısız olur.
+      await updateEmail(auth.currentUser, nextEmail);
+    }
+
+    await userService.updateUserProfile(currentProfile.uid, {
+      ...data,
+      ...(nextEmail ? { email: nextEmail } : {}),
+    });
+
+    set({
+      profile: {
+        ...currentProfile,
+        ...data,
+        ...(nextEmail ? { email: nextEmail } : {}),
+      },
+      error: null,
+    });
   },
 }));

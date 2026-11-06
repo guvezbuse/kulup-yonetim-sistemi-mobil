@@ -13,8 +13,13 @@ import ClubManageScreen from "./screens/club-manage/ClubManageScreen";
 import ClubDetailScreen from "./screens/ClubDetailScreen";
 import InviteAcceptScreen from "./screens/InviteAcceptScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import EditProfileScreen from "./screens/EditProfileScreen";
 import MemberIdCardScreen from "./screens/MemberIdCardScreen";
 import EventsScreen from "./screens/EventsScreen";
+import DraftsScreen from "./screens/DraftsScreen";
+import AttendanceScreen from "./screens/AttendanceScreen";
+import MyClubsScreen from "./screens/MyClubsScreen";
+import EventHistoryScreen from "./screens/EventHistoryScreen";
 import NotificationsScreen from "./screens/NotificationsScreen";
 import ManageUsersScreen from "./screens/admin/ManageUsersScreen";
 import { useAuthStore } from "./store/authStore";
@@ -32,12 +37,17 @@ type ScreenType =
   | "forgot-password"
   | "accept-invite"
   | "profile"
+  | "edit-profile"
   | "id-card"
   | "clubs"
   | "announcements"
   | "events"
+  | "drafts"
+  | "attendance"
   | "create-event"
   | "edit-event"
+  | "my-clubs"
+  | "event-history"
   | "notifications"
   | "manage-users"
   | "manage-club"
@@ -47,6 +57,8 @@ export default function App() {
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>(["login"]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
   const [editingEventId, setEditingEventId] = useState<string>("");
+  const [attendanceEventId, setAttendanceEventId] = useState<string>("");
+  const [attendanceEventTitle, setAttendanceEventTitle] = useState<string>("");
 
   const user = useAuthStore((state) => state.user);
   const initializeAuthListener = useAuthStore((state) => state.initializeAuthListener);
@@ -142,12 +154,20 @@ export default function App() {
               paddingHorizontal: 8,
               borderRadius: 8,
               backgroundColor:
-                currentScreen === "profile" || currentScreen === "manage-users"
+                currentScreen === "profile" ||
+                currentScreen === "edit-profile" ||
+                currentScreen === "my-clubs" ||
+                currentScreen === "event-history" ||
+                currentScreen === "manage-users"
                   ? "#4f46e5"
                   : "#0f172a",
               borderWidth: 1,
               borderColor:
-                currentScreen === "profile" || currentScreen === "manage-users"
+                currentScreen === "profile" ||
+                currentScreen === "edit-profile" ||
+                currentScreen === "my-clubs" ||
+                currentScreen === "event-history" ||
+                currentScreen === "manage-users"
                   ? "#6366f1"
                   : "#1e293b",
               alignItems: "center",
@@ -211,6 +231,8 @@ export default function App() {
               borderRadius: 8,
               backgroundColor:
                 currentScreen === "events" ||
+                currentScreen === "drafts" ||
+                currentScreen === "attendance" ||
                 currentScreen === "create-event" ||
                 currentScreen === "edit-event"
                   ? "#7c3aed"
@@ -218,6 +240,8 @@ export default function App() {
               borderWidth: 1,
               borderColor:
                 currentScreen === "events" ||
+                currentScreen === "drafts" ||
+                currentScreen === "attendance" ||
                 currentScreen === "create-event" ||
                 currentScreen === "edit-event"
                   ? "#8b5cf6"
@@ -290,8 +314,25 @@ export default function App() {
           <ProfileScreen
             onOpenManageUsers={() => navigateTo("manage-users")}
             onOpenIdCard={() => navigateTo("id-card")}
+            onEditProfile={() => navigateTo("edit-profile")}
+            onOpenMyClubs={() => navigateTo("my-clubs")}
+            onOpenEventHistory={() => navigateTo("event-history")}
           />
         )}
+
+        {currentScreen === "edit-profile" && <EditProfileScreen onBack={goBack} />}
+
+        {currentScreen === "my-clubs" && (
+          <MyClubsScreen
+            onBack={goBack}
+            onSelectClub={(club: Club) => {
+              setSelectedClub(club);
+              navigateTo("club-detail");
+            }}
+          />
+        )}
+
+        {currentScreen === "event-history" && <EventHistoryScreen onBack={goBack} />}
 
         {currentScreen === "id-card" && <MemberIdCardScreen onBack={goBack} />}
 
@@ -324,9 +365,33 @@ export default function App() {
                 } else if (screen === "EditEventScreen") {
                   setEditingEventId(String(params?.eventId || ""));
                   navigateTo("edit-event");
+                } else if (screen === "Drafts") {
+                  navigateTo("drafts");
+                } else if (screen === "Attendance") {
+                  setAttendanceEventId(String(params?.eventId || ""));
+                  setAttendanceEventTitle(String(params?.eventTitle || ""));
+                  navigateTo("attendance");
                 }
               },
             }}
+          />
+        )}
+
+        {currentScreen === "drafts" && (
+          <DraftsScreen
+            onBack={goBack}
+            onEditEvent={(eventId: string) => {
+              setEditingEventId(eventId);
+              navigateTo("edit-event");
+            }}
+          />
+        )}
+
+        {currentScreen === "attendance" && (
+          <AttendanceScreen
+            eventId={attendanceEventId}
+            eventTitle={attendanceEventTitle}
+            onBack={goBack}
           />
         )}
 

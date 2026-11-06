@@ -7,6 +7,8 @@ import {
   Alert,
   ActivityIndicator,
   BackHandler,
+  ScrollView,
+  SafeAreaView,
 } from "react-native";
 import { Timestamp } from "firebase/firestore";
 import { getEventById, updateEvent } from "../services/eventService";
@@ -66,7 +68,9 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
         setGorselUrl(event.gorselUrl || "");
         setHedefKitle(event.hedef_kitle || TARGET_AUDIENCE.EVERYONE);
         setStatus(event.status || EVENT_STATUS.PUBLISHED);
-        setKontenjan(event.kontenjan !== null && event.kontenjan !== undefined ? String(event.kontenjan) : "");
+        setKontenjan(
+          event.kontenjan !== null && event.kontenjan !== undefined ? String(event.kontenjan) : "",
+        );
 
         if (event.tarih) {
           const d =
@@ -176,150 +180,156 @@ export default function EditEventScreen({ onBack, navigation, route }: EditEvent
   }
 
   return (
-    <View className="flex-1 bg-slate-900 p-3 justify-between">
-      <View className="flex-row justify-between items-center mb-1">
-        <TouchableOpacity onPress={handleGoBack}>
-          <Text className="text-indigo-400 font-semibold text-xs">← Geri Dön</Text>
-        </TouchableOpacity>
-        <Text className="text-white font-bold text-base">Etkinliği Düzenle</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <SafeAreaView className="flex-1 bg-slate-900">
+      <ScrollView
+        className="flex-1 px-4 py-4"
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Ortalanmış Başlık (Geri Dön Butonu Kaldırıldı) */}
+        <View className="items-center mb-6 pt-2">
+          <Text className="text-white font-bold text-lg">Etkinliği Düzenle</Text>
+        </View>
 
-      <View className="space-y-1.5">
-        {/* Hedef Kitle */}
-        <View>
-          <Text className="text-slate-300 text-[11px] font-semibold mb-0.5">Hedef Kitle</Text>
-          <View className="flex-row gap-1">
-            {AUDIENCE_OPTIONS.map((item) => (
-              <TouchableOpacity
-                key={item.value}
-                onPress={() => setHedefKitle(item.value)}
-                className={`flex-1 py-1 px-2 rounded border items-center ${
-                  hedefKitle === item.value
-                    ? "bg-indigo-600 border-indigo-500"
-                    : "bg-slate-800 border-slate-700"
-                }`}
-              >
-                <Text className="text-white text-[11px] font-semibold">{item.label}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* Form İçerik Grubu */}
+        <View className="space-y-5">
+          {/* Hedef Kitle */}
+          <View>
+            <Text className="text-slate-300 text-xs font-semibold mb-2">Hedef Kitle</Text>
+            <View className="flex-row gap-2">
+              {AUDIENCE_OPTIONS.map((item) => (
+                <TouchableOpacity
+                  key={item.value}
+                  onPress={() => setHedefKitle(item.value)}
+                  className={`flex-1 py-3 px-3 rounded-xl border items-center ${
+                    hedefKitle === item.value
+                      ? "bg-indigo-600 border-indigo-500 shadow-md"
+                      : "bg-slate-800 border-slate-700"
+                  }`}
+                >
+                  <Text className="text-white text-xs font-semibold">{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-        </View>
 
-        {/* Durum (Yayınla / Taslak) */}
-        <View className="flex-row gap-1.5">
-          <TouchableOpacity
-            onPress={() => setStatus(EVENT_STATUS.PUBLISHED)}
-            className={`flex-1 py-1 rounded border items-center ${
-              status === EVENT_STATUS.PUBLISHED
-                ? "bg-emerald-600 border-emerald-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-[11px] font-semibold">Yayınla</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setStatus(EVENT_STATUS.DRAFT)}
-            className={`flex-1 py-1 rounded border items-center ${
-              status === EVENT_STATUS.DRAFT
-                ? "bg-amber-600 border-amber-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-[11px] font-semibold">Taslak</Text>
-          </TouchableOpacity>
-        </View>
+          {/* Durum (Yayınla / Taslak) */}
+          <View className="flex-row gap-3">
+            <TouchableOpacity
+              onPress={() => setStatus(EVENT_STATUS.PUBLISHED)}
+              className={`flex-1 py-3 rounded-xl border items-center ${
+                status === EVENT_STATUS.PUBLISHED
+                  ? "bg-emerald-600 border-emerald-500 shadow-md"
+                  : "bg-slate-800 border-slate-700"
+              }`}
+            >
+              <Text className="text-white text-xs font-semibold">Yayınla</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setStatus(EVENT_STATUS.DRAFT)}
+              className={`flex-1 py-3 rounded-xl border items-center ${
+                status === EVENT_STATUS.DRAFT
+                  ? "bg-amber-600 border-amber-500 shadow-md"
+                  : "bg-slate-800 border-slate-700"
+              }`}
+            >
+              <Text className="text-white text-xs font-semibold">Taslak</Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* Başlık ve Konum */}
-        <View className="flex-row gap-1.5">
-          <View className="flex-1">
-            <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Başlık *</Text>
+          {/* Başlık ve Konum */}
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <Text className="text-slate-300 text-xs font-semibold mb-2">Başlık *</Text>
+              <TextInput
+                value={baslik}
+                onChangeText={setBaslik}
+                placeholder="Etkinlik adı"
+                placeholderTextColor="#64748b"
+                className="bg-slate-800 text-white px-3.5 py-3 rounded-xl border border-slate-700 text-sm"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-slate-300 text-xs font-semibold mb-2">Konum *</Text>
+              <TextInput
+                value={konum}
+                onChangeText={setKonum}
+                placeholder="Salon A"
+                placeholderTextColor="#64748b"
+                className="bg-slate-800 text-white px-3.5 py-3 rounded-xl border border-slate-700 text-sm"
+              />
+            </View>
+          </View>
+
+          {/* Açıklama */}
+          <View>
+            <Text className="text-slate-300 text-xs font-semibold mb-2">Açıklama *</Text>
             <TextInput
-              value={baslik}
-              onChangeText={setBaslik}
-              placeholder="Etkinlik adı"
+              value={aciklama}
+              onChangeText={setAciklama}
+              placeholder="Etkinlik detayları..."
               placeholderTextColor="#64748b"
-              className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
+              className="bg-slate-800 text-white px-3.5 py-3 rounded-xl border border-slate-700 text-sm h-28"
+              multiline
+              textAlignVertical="top"
             />
           </View>
-          <View className="flex-1">
-            <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Konum *</Text>
-            <TextInput
-              value={konum}
-              onChangeText={setKonum}
-              placeholder="Salon A"
-              placeholderTextColor="#64748b"
-              className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
-            />
+
+          {/* Tarih ve Kontenjan */}
+          <View className="flex-row gap-3">
+            <View className="flex-[2]">
+              <Text className="text-slate-300 text-xs font-semibold mb-2">
+                Tarih (GG.AA.YYYY SS:DD) *
+              </Text>
+              <TextInput
+                value={tarihGirdi}
+                onChangeText={setTarihGirdi}
+                placeholder="15.11.2026 14:30"
+                placeholderTextColor="#64748b"
+                className="bg-slate-800 text-white px-3.5 py-3 rounded-xl border border-slate-700 text-sm"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-slate-300 text-xs font-semibold mb-2">Kontenjan</Text>
+              <TextInput
+                value={kontenjan}
+                onChangeText={setKontenjan}
+                keyboardType="numeric"
+                placeholder="Sınırsız"
+                placeholderTextColor="#64748b"
+                className="bg-slate-800 text-white px-3.5 py-3 rounded-xl border border-slate-700 text-sm"
+              />
+            </View>
           </View>
-        </View>
 
-        {/* Açıklama */}
-        <View>
-          <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Açıklama *</Text>
-          <TextInput
-            value={aciklama}
-            onChangeText={setAciklama}
-            placeholder="Etkinlik detayları..."
-            placeholderTextColor="#64748b"
-            className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs h-10"
-            multiline
-          />
-        </View>
-
-        {/* Tarih ve Kontenjan */}
-        <View className="flex-row gap-1.5">
-          <View className="flex-[2]">
-            <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">
-              Tarih (GG.AA.YYYY SS:DD) *
+          {/* Görsel URL */}
+          <View>
+            <Text className="text-slate-300 text-xs font-semibold mb-2">
+              Görsel URL (Opsiyonel)
             </Text>
             <TextInput
-              value={tarihGirdi}
-              onChangeText={setTarihGirdi}
-              placeholder="15.11.2026 14:30"
+              value={gorselUrl}
+              onChangeText={setGorselUrl}
+              placeholder="https://..."
               placeholderTextColor="#64748b"
-              className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">Kontenjan</Text>
-            <TextInput
-              value={kontenjan}
-              onChangeText={setKontenjan}
-              keyboardType="numeric"
-              placeholder="Sınırsız"
-              placeholderTextColor="#64748b"
-              className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
+              className="bg-slate-800 text-white px-3.5 py-3 rounded-xl border border-slate-700 text-xs"
             />
           </View>
         </View>
 
-        {/* Görsel URL */}
-        <View>
-          <Text className="text-slate-300 text-[10px] font-semibold mb-0.5">
-            Görsel URL (Opsiyonel)
-          </Text>
-          <TextInput
-            value={gorselUrl}
-            onChangeText={setGorselUrl}
-            placeholder="https://..."
-            placeholderTextColor="#64748b"
-            className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700 text-xs"
-          />
-        </View>
-      </View>
-
-      <TouchableOpacity
-        onPress={handleUpdate}
-        disabled={saving}
-        className="bg-indigo-600 py-2 rounded-lg items-center mt-1"
-      >
-        {saving ? (
-          <ActivityIndicator color="#fff" size="small" />
-        ) : (
-          <Text className="text-white font-bold text-xs">Değişiklikleri Kaydet</Text>
-        )}
-      </TouchableOpacity>
-    </View>
+        {/* Kaydet Butonu */}
+        <TouchableOpacity
+          onPress={handleUpdate}
+          disabled={saving}
+          className="bg-indigo-600 py-3.5 rounded-xl items-center mt-8 shadow-lg active:opacity-90"
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text className="text-white font-bold text-sm">Değişiklikleri Kaydet</Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
