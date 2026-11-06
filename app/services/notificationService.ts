@@ -12,6 +12,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { toMillis } from "../lib/eventDate";
 import {
   ANNOUNCEMENT_SCOPE,
   AnnouncementScope,
@@ -20,6 +21,7 @@ import {
   JOIN_REQUEST_STATUS,
   JoinRequestStatus,
   MEMBERSHIP_STATUS,
+  NotificationItem,
   TARGET_AUDIENCE,
   TargetAudience,
   isClubManagerRole,
@@ -159,6 +161,47 @@ export const notificationService = {
       }
     } catch (error) {
       console.log("Bildirim tetikleme hatası:", error);
+    }
+  },
+
+  // -------------------------------------------------------------
+  // BİLDİRİM GEÇMİŞİ (uygulama içi liste)
+  // -------------------------------------------------------------
+
+  // Kullanıcının kendi bildirimlerini en yeniden eskiye sıralı döndürür.
+  // Sorguda orderBy kullanılmıyor: where + orderBy bileşimi composite index
+  // gerektirir, sıralamayı istemci tarafında yapıyoruz.
+  getUserNotifications: async (userId: string): Promise<NotificationItem[]> => {
+    const snap = await getDocs(
+      query(collection(db, "notifications"), where("user_id", "==", userId)),
+    );
+
+    return snap.docs
+      .map((item) => ({ id: item.id, ...(item.data() as Omit<NotificationItem, "id">) }))
+      .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+  },
+
+  // Tek bildirimi okundu olarak işaretler.
+  markNotificationRead: async (notificationId: string) => {
+    await updateDoc(doc(db, "notifications", notificationId), { read: true });
+  },
+
+  // Kullanıcının tüm okunmamış bildirimlerini tek batch'te okundu yapar.
+  markAllNotificationsRead: async (userId: string) => {
+    const snap = await getDocs(
+      query(
+        collection(db, "notifications"),
+        where("user_id", "==", userId),
+        where("read", "==", false),
+      ),
+    );
+
+    if (snap.empty) return;
+
+    for (const group of chunkArray(snap.docs, FIRESTORE_BATCH_SIZE)) {
+      const batch = writeBatch(db);
+      group.forEach((item) => batch.update(item.ref, { read: true }));
+      await batch.commit();
     }
   },
 

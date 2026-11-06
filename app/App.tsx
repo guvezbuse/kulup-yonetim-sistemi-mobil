@@ -21,6 +21,7 @@ import AttendanceScreen from "./screens/AttendanceScreen";
 import MyClubsScreen from "./screens/MyClubsScreen";
 import EventHistoryScreen from "./screens/EventHistoryScreen";
 import NotificationsScreen from "./screens/NotificationsScreen";
+import AnnouncementsScreen from "./screens/AnnouncementsScreen";
 import ManageUsersScreen from "./screens/admin/ManageUsersScreen";
 import { useAuthStore } from "./store/authStore";
 import type { Club } from "./types";
@@ -351,10 +352,9 @@ export default function App() {
           />
         )}
 
-        {/* Duyurular menüsüne tıklandığında doğrudan NotificationsScreen çağrılır */}
-        {(currentScreen === "announcements" || currentScreen === "notifications") && (
-          <NotificationsScreen onBack={goBack} />
-        )}
+        {currentScreen === "announcements" && <AnnouncementsScreen onBack={goBack} />}
+
+        {currentScreen === "notifications" && <NotificationsScreen onBack={goBack} />}
 
         {currentScreen === "events" && (
           <EventsScreen

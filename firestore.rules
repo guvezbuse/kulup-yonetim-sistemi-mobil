@@ -1,0 +1,160 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================
+    // YARDIMCI FONKSİYONLAR
+    // =========================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Sistem admini tek kaynaktan okunur: users/{uid}.is_admin === true
+    function isSuperAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid))
+             .data.get('is_admin', false) == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // =========================================================
+    // KULLANICILAR
+    // =========================================================
+
+    match /users/{userId} {
+      // Profil listeleri, yoklama isimleri ve katılımcı bilgileri için gerekli.
+      allow read: if isSignedIn();
+
+      // Kayıt olan / davet kabul eden kullanıcı yalnızca KENDİ belgesini
+      // oluşturabilir ve asla admin olarak oluşturamaz.
+      allow create: if isOwner(userId)
+        && request.resource.data.get('is_admin', false) == false;
+
+      // Kullanıcı kendi profilini güncelleyebilir ama is_admin alanını
+      // değiştiremez. Admin ise herkesin is_admin alanını değiştirebilir.
+      allow update: if isSuperAdmin()
+        || (isOwner(userId)
+            && request.resource.data.get('is_admin', false)
+               == resource.data.get('is_admin', false));
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // =========================================================
+    // KULÜPLER
+    // =========================================================
+
+    match /clubs/{clubId} {
+      allow read: if true;
+
+      // Kulüp oluşturma/silme yalnızca sistem admini.
+      allow create, delete: if isSuperAdmin();
+
+      // Kulüp yöneticileri kulüp bilgilerini güncelleyebilir.
+      allow update: if isSignedIn();
+    }
+
+    // =========================================================
+    // KATILIM TALEPLERİ
+    // =========================================================
+
+    match /join_requests/{requestId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    // =========================================================
+    // ÜYELİKLER
+    // =========================================================
+
+    match /memberships/{membershipId} {
+      // Kulüp yöneticileri başvuru onaylarken başka kullanıcı adına kayıt
+      // oluşturduğu için yazma izni oturum açmış kullanıcılara bırakıldı.
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    // =========================================================
+    // DAVETLER
+    // =========================================================
+
+    match /invitations/{inviteId} {
+      // Davet kodu giriş yapılmadan önce sorgulanır.
+      allow read: if true;
+
+      allow create, update: if isSignedIn();
+
+      // Süresi dolmuş davet, giriş öncesi temizlendiği için açık bırakıldı.
+      allow delete: if true;
+    }
+
+    // =========================================================
+    // DUYURULAR
+    // =========================================================
+
+    match /announcements/{announcementId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    // =========================================================
+    // ETKİNLİKLER
+    // =========================================================
+
+    match /events/{eventId} {
+      // Üyeler katıl/ayrıl işleminde katilimcilar alanını günceller.
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    // =========================================================
+    // ETKİNLİK BAŞVURULARI (eski şema - geriye dönük kayıtlar için)
+    // =========================================================
+
+    match /event_applications/{appId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    // =========================================================
+    // BİLDİRİMLER (uygulama içi bildirim geçmişi)
+    // =========================================================
+
+    match /notifications/{notificationId} {
+      // Kullanıcı yalnızca kendi bildirimlerini okuyabilir ve
+      // okundu olarak işaretleyebilir.
+      allow read, update: if isSignedIn()
+        && resource.data.get('user_id', '') == request.auth.uid;
+
+      // Bildirim kaydı, duyuru/etkinlik yayınlayan oturum açmış kullanıcı
+      // tarafından hedef kullanıcılar adına oluşturulur.
+      allow create: if isSignedIn();
+
+      allow delete: if false;
+    }
+
+    // =========================================================
+    // YOKLAMA
+    // =========================================================
+
+    match /attendance/{attendanceId} {
+      // Admin tüm yoklamaları, üye yalnızca kendi yoklamasını görebilir.
+      allow read: if isSignedIn()
+        && (isSuperAdmin() || resource.data.get('user_id', '') == request.auth.uid);
+
+      // Yoklama yalnızca sistem admini tarafından ve kendi adına alınabilir.
+      allow create: if isSuperAdmin()
+        && request.resource.data.get('alan_yonetici_id', '') == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    // =========================================================
+    // TANIMSIZ TÜM YOLLAR KAPALI
+    // =========================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

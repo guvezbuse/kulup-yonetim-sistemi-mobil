@@ -6,28 +6,22 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from "react-native";
-import { announcementService, AnnouncementItem } from "../services/announcementService";
-import { ANNOUNCEMENT_SCOPE, TARGET_AUDIENCE } from "../types";
+import { notificationService } from "../services/notificationService";
+import { NotificationItem } from "../types";
 import { useAuthStore } from "../store/authStore";
-import CreateAnnouncementModal from "./admin/CreateAnnouncementModal";
-import EditAnnouncementModal from "./admin/EditAnnouncementModal";
+import { formatShortDateTime } from "../lib/eventDate";
+import { getErrorCode } from "../lib/errors";
 
 export default function NotificationsScreen({ onBack }: { onBack?: () => void }) {
   const user = useAuthStore((state) => state.user);
-  const profile = useAuthStore((state) => state.profile);
 
-  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [editingAnnouncement, setEditingAnnouncement] = useState<AnnouncementItem | null>(null);
-
-  const isSystemAdmin = Boolean(profile?.is_admin);
-
-  const loadAnnouncements = async () => {
+  const loadNotifications = async () => {
     if (!user) {
       setLoading(false);
       setRefreshing(false);
@@ -35,11 +29,13 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
     }
 
     try {
+      setErrorCode(null);
       setLoading(true);
-      const data = await announcementService.getAnnouncementsForUser(user.uid, isSystemAdmin);
-      setAnnouncements(data || []);
+      const data = await notificationService.getUserNotifications(user.uid);
+      setNotifications(data);
     } catch (err) {
-      console.log("Duyuruları yükleme hatası:", err);
+      console.log("Bildirimleri yükleme hatası:", err);
+      setErrorCode(getErrorCode(err) || "bilinmeyen");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -47,112 +43,90 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
   };
 
   useEffect(() => {
-    loadAnnouncements();
+    loadNotifications();
   }, [user?.uid]);
 
-  const handleDeleteAnnouncement = (id: string, baslik: string) => {
-    Alert.alert("Duyuruyu Sil", `"${baslik}" duyurusunu silmek istediğinizden emin misiniz?`, [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await announcementService.deleteAnnouncement(id);
-            loadAnnouncements();
-          } catch (err) {
-            Alert.alert("Hata", "Duyuru silinirken bir sorun oluştu.");
-          }
-        },
-      },
-    ]);
-  };
+  const unreadCount = notifications.filter((item) => !item.read).length;
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "";
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString("tr-TR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return "";
-    }
-  };
+  const handleNotificationPress = async (item: NotificationItem) => {
+    if (item.read) return;
 
-  // 4 ÇEŞİT ETİKET RENDERER
-  const renderAnnouncementTag = (item: AnnouncementItem) => {
-    // 1. Kulüp Duyurusu ise -> Kulüp Adı
-    if (item.kapsam === ANNOUNCEMENT_SCOPE.CLUB) {
-      return (
-        <View className="bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">
-          <Text className="text-indigo-300 text-[10px] font-bold">
-            {item.club_ad || "Kulüp Duyurusu"}
-          </Text>
-        </View>
-      );
-    }
-
-    // 2. Sistem Duyuruları Hedef Kitleye Göre
-    if (item.hedef_kitle === TARGET_AUDIENCE.ALL_MANAGERS) {
-      return (
-        <View className="bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
-          <Text className="text-amber-300 text-[10px] font-bold">🛡️ Tüm Yöneticiler</Text>
-        </View>
-      );
-    }
-
-    if (item.hedef_kitle === TARGET_AUDIENCE.ALL_ADMINS) {
-      return (
-        <View className="bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30">
-          <Text className="text-purple-300 text-[10px] font-bold">🔑 Adminler</Text>
-        </View>
-      );
-    }
-
-    // Varsayılan / tum_uyeler
-    return (
-      <View className="bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
-        <Text className="text-emerald-300 text-[10px] font-bold">📢 Tüm Üyeler</Text>
-      </View>
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === item.id ? { ...notification, read: true } : notification,
+      ),
     );
+
+    try {
+      await notificationService.markNotificationRead(item.id);
+    } catch (err) {
+      console.log("Bildirim okundu olarak işaretlenemedi:", err);
+      loadNotifications();
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (!user || unreadCount === 0) return;
+
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+
+    try {
+      await notificationService.markAllNotificationsRead(user.uid);
+    } catch (err) {
+      console.log("Bildirimler okundu olarak işaretlenemedi:", err);
+      loadNotifications();
+    }
   };
 
   return (
     <View className="flex-1 bg-slate-900 px-4 pt-4">
       <View className="flex-row items-center justify-between mb-4">
         <View>
-          <Text className="text-2xl font-bold text-white">Duyurular</Text>
+          <Text className="text-2xl font-bold text-white">Bildirimler</Text>
           <Text className="text-slate-400 text-xs mt-0.5">
-            Kampüs ve kulüp duyurularını takip edin
+            Etkinlik, duyuru ve üyelik hareketleri
           </Text>
         </View>
 
-        {isSystemAdmin && (
-          <TouchableOpacity
-            onPress={() => setIsCreateModalOpen(true)}
-            className="bg-indigo-600 px-3 py-2 rounded-xl flex-row items-center"
-            activeOpacity={0.7}
-          >
-            <Text className="text-white font-bold text-xs">+ Yeni Duyuru</Text>
+        {unreadCount > 0 && (
+          <TouchableOpacity onPress={handleMarkAllAsRead} activeOpacity={0.7}>
+            <Text className="text-indigo-400 text-xs font-semibold">Tümünü Oku</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {loading ? (
         <ActivityIndicator color="#6366f1" size="large" className="mt-8" />
-      ) : announcements.length === 0 ? (
-        <View className="flex-1 justify-center items-center">
-          <Text className="text-slate-400 text-sm">Henüz yayınlanmış bir duyuru bulunmuyor.</Text>
+      ) : errorCode ? (
+        <View className="flex-1 justify-center items-center px-8">
+          <Text className="text-slate-300 text-sm font-semibold mb-1">
+            Bildirimler yüklenemedi
+          </Text>
+          <Text className="text-slate-500 text-[11px] text-center mb-3">
+            {errorCode === "permission-denied"
+              ? "Firestore kuralları notifications koleksiyonuna okuma izni vermiyor."
+              : `Teknik kod: ${errorCode}`}
+          </Text>
+          <TouchableOpacity
+            onPress={loadNotifications}
+            className="bg-indigo-600 px-4 py-2 rounded-xl"
+            activeOpacity={0.7}
+          >
+            <Text className="text-white text-xs font-bold">Tekrar Dene</Text>
+          </TouchableOpacity>
+        </View>
+      ) : notifications.length === 0 ? (
+        <View className="flex-1 justify-center items-center px-8">
+          <Text className="text-3xl mb-3">🔔</Text>
+          <Text className="text-slate-300 text-sm font-semibold">Henüz bildiriminiz yok</Text>
+          <Text className="text-slate-500 text-xs text-center mt-1 leading-5">
+            Yeni duyurular, etkinlikler ve üyelik hareketleri burada listelenecek.
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={announcements}
-          keyExtractor={(item) => item.id || Math.random().toString()}
+          data={notifications}
+          keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
           refreshControl={
@@ -160,65 +134,46 @@ export default function NotificationsScreen({ onBack }: { onBack?: () => void })
               refreshing={refreshing}
               onRefresh={() => {
                 setRefreshing(true);
-                loadAnnouncements();
+                loadNotifications();
               }}
               tintColor="#6366f1"
             />
           }
           renderItem={({ item }) => (
-            <View className="p-4 rounded-xl mb-3 border bg-slate-800 border-slate-700/60">
-              <View className="flex-row justify-between items-start mb-1.5">
-                <Text className="text-white font-bold text-base flex-1 mr-2">{item.baslik}</Text>
+            <TouchableOpacity
+              onPress={() => handleNotificationPress(item)}
+              activeOpacity={0.8}
+              className={`p-4 rounded-xl mb-3 border ${
+                item.read
+                  ? "bg-slate-800/60 border-slate-700/50"
+                  : "bg-slate-800 border-indigo-500/40"
+              }`}
+            >
+              <View className="flex-row items-start">
+                <View className="w-2 mr-2 pt-1.5">
+                  {!item.read && <View className="w-2 h-2 rounded-full bg-indigo-400" />}
+                </View>
 
-                <View className="flex-row items-center gap-2">
-                  {/* 4 FARKLI DİNAMİK ETİKET */}
-                  {renderAnnouncementTag(item)}
+                <View className="flex-1">
+                  <Text
+                    className={`text-sm ${
+                      item.read ? "text-slate-300" : "text-white font-bold"
+                    }`}
+                  >
+                    {item.title}
+                  </Text>
 
-                  {/* ADMİN DÜZENLE / SİL */}
-                  {isSystemAdmin && (
-                    <View className="flex-row items-center gap-1.5">
-                      <TouchableOpacity
-                        onPress={() => setEditingAnnouncement(item)}
-                        className="bg-amber-500/20 p-1.5 rounded-lg border border-amber-500/30"
-                      >
-                        <Text className="text-xs">✏️</Text>
-                      </TouchableOpacity>
+                  <Text className="text-slate-400 text-xs leading-5 mt-1">{item.body}</Text>
 
-                      <TouchableOpacity
-                        onPress={() => handleDeleteAnnouncement(item.id, item.baslik)}
-                        className="bg-red-500/20 p-1.5 rounded-lg border border-red-500/30"
-                      >
-                        <Text className="text-xs">🗑️</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                  <Text className="text-slate-500 text-[10px] mt-2">
+                    {formatShortDateTime(item.createdAt)}
+                  </Text>
                 </View>
               </View>
-
-              <Text className="text-slate-300 text-xs leading-5 mt-1">{item.icerik}</Text>
-
-              {item.tarih && (
-                <Text className="text-slate-500 text-[10px] mt-2 text-right">
-                  {formatDate(item.tarih)}
-                </Text>
-              )}
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}
-
-      <CreateAnnouncementModal
-        visible={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onSuccess={() => loadAnnouncements()}
-      />
-
-      <EditAnnouncementModal
-        visible={Boolean(editingAnnouncement)}
-        announcement={editingAnnouncement}
-        onClose={() => setEditingAnnouncement(null)}
-        onSuccess={() => loadAnnouncements()}
-      />
     </View>
   );
 }

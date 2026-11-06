@@ -205,3 +205,14 @@ export interface Attendance {
   alan_yonetici_id: string;
   zaman_damgasi: FirestoreDate;
 }
+
+// 11. Uygulama İçi Bildirim Kaydı (users yerine notifications koleksiyonu)
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string;
+  read: boolean;
+  data?: Record<string, unknown>;
+  createdAt?: FirestoreDate;
+}
