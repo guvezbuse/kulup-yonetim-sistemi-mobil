@@ -77,8 +77,7 @@ export type InvitationStatus = (typeof INVITATION_STATUS)[keyof typeof INVITATIO
 export type AnnouncementScope = (typeof ANNOUNCEMENT_SCOPE)[keyof typeof ANNOUNCEMENT_SCOPE];
 export type TargetAudience = (typeof TARGET_AUDIENCE)[keyof typeof TARGET_AUDIENCE];
 
-export const isClubManagerRole = (role?: string | null): boolean =>
-  role === CLUB_ROLE.MANAGER;
+export const isClubManagerRole = (role?: string | null): boolean => role === CLUB_ROLE.MANAGER;
 
 // 1. Kullanıcı Modeli (Sistem geneli hesap)
 export interface User {
@@ -207,12 +206,41 @@ export interface Attendance {
 }
 
 // 11. Uygulama İçi Bildirim Kaydı (users yerine notifications koleksiyonu)
+export const NOTIFICATION_TYPE = {
+  SYSTEM: "sistem",
+  ANNOUNCEMENT: "duyuru",
+  EVENT: "etkinlik",
+  APPLICATION: "basvuru",
+  DECISION: "karar",
+  INVITATION: "davet",
+  ATTENDANCE: "yoklama",
+} as const;
+
+export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
+
+// Bildirime tıklandığında gidilecek üst seviye ekran.
+export type NotificationTargetScreen = "announcements" | "events" | "clubs";
+
+export interface NotificationExtra {
+  tip?: NotificationType;
+  club_id?: string | null;
+  club_ad?: string | null;
+  hedef_ekran?: NotificationTargetScreen | null;
+  hedef_id?: string | null;
+  data?: Record<string, unknown>;
+}
+
 export interface NotificationItem {
   id: string;
   user_id: string;
   title: string;
   body: string;
   read: boolean;
+  tip?: NotificationType | null;
+  club_id?: string | null;
+  club_ad?: string | null;
+  hedef_ekran?: NotificationTargetScreen | null;
+  hedef_id?: string | null;
   data?: Record<string, unknown>;
   createdAt?: FirestoreDate;
 }

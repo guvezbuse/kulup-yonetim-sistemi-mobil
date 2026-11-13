@@ -55,6 +55,7 @@ export const announcementService = {
         null,
         baslik.trim(),
         icerik.trim(),
+        { announcementId: docRef.id },
       );
     } catch (pushErr) {
       console.log("Sistem duyurusu push bildirimi gönderilemedi:", pushErr);
@@ -96,6 +97,7 @@ export const announcementService = {
         clubId,
         baslik.trim(),
         icerik.trim(),
+        { announcementId: docRef.id, clubName },
       );
     } catch (pushErr) {
       console.log("Kulüp duyurusu push bildirimi gönderilemedi:", pushErr);

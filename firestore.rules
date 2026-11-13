@@ -135,7 +135,7 @@ service cloud.firestore {
       // Başvuru sahibi kendi talebini onaylayamaz/reddedemez.
       allow update: if isSignedIn()
         && request.auth.uid != resource.data.get('user_id', '')
-        && changedKeysOnly(['durum', 'updatedAt', 'karar_tarihi'])
+        && changedKeysOnly(['durum', 'updatedAt', 'karar_tarihi', 'karar_veren_id'])
         && request.resource.data.durum in ['onaylandi', 'reddedildi'];
 
       // Talep kayıtları normalde silinmez; kulüp silme temizliği admin'e açıktır.

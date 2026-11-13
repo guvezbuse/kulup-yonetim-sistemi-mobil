@@ -9,8 +9,9 @@ import {
   doc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { getErrorMessage } from "../lib/errors";
+import { notificationService } from "./notificationService";
 import {
   CLUB_ROLE,
   Club,
@@ -86,7 +87,8 @@ export const membershipService = {
 
     if (!memberSnap.empty) {
       const data = memberSnap.docs[0].data();
-      if (data.status === MEMBERSHIP_STATUS.ACTIVE) throw new Error("Zaten bu kulübün aktif üyesisiniz.");
+      if (data.status === MEMBERSHIP_STATUS.ACTIVE)
+        throw new Error("Zaten bu kulübün aktif üyesisiniz.");
       if (data.status === MEMBERSHIP_STATUS.PENDING) {
         throw new Error("Bu kulüp için zaten bekleyen bir başvurunuz var.");
       }
@@ -172,6 +174,8 @@ export const membershipService = {
 
     await updateDoc(doc(db, "join_requests", requestId), {
       durum: JOIN_REQUEST_STATUS.APPROVED,
+      karar_tarihi: new Date().toISOString(),
+      karar_veren_id: auth.currentUser?.uid ?? "",
       updatedAt: serverTimestamp(),
     });
   },
@@ -181,6 +185,8 @@ export const membershipService = {
     await updateDoc(doc(db, "join_requests", requestId), {
       durum: JOIN_REQUEST_STATUS.REJECTED,
       karar_tarihi: new Date().toISOString(),
+      karar_veren_id: auth.currentUser?.uid ?? "",
+      updatedAt: serverTimestamp(),
     });
 
     const qMember = query(
@@ -294,13 +300,28 @@ export const membershipService = {
   },
 
   // 9. Üyenin rolünü değiştirme (Üye <-> Yönetici)
-  toggleMemberRole: async (membershipId: string, currentRole: ClubRole) => {
+  toggleMemberRole: async (
+    membershipId: string,
+    currentRole: ClubRole,
+    notify?: { userId: string; clubId: string; clubName: string },
+  ) => {
     const nextRole: ClubRole = isClubManagerRole(currentRole)
       ? CLUB_ROLE.MEMBER
       : CLUB_ROLE.MANAGER;
     await updateDoc(doc(db, "memberships", membershipId), {
       role: nextRole,
     });
+
+    // Şartname 8: yöneticilik verildiğinde ilgili kişiye bildirim gider.
+    if (nextRole === CLUB_ROLE.MANAGER && notify) {
+      await notificationService.notifyRoleInvitation(
+        notify.userId,
+        notify.clubName,
+        nextRole,
+        notify.clubId,
+      );
+    }
+
     return nextRole;
   },
 

@@ -24,7 +24,7 @@ import NotificationsScreen from "./screens/NotificationsScreen";
 import AnnouncementsScreen from "./screens/AnnouncementsScreen";
 import ManageUsersScreen from "./screens/admin/ManageUsersScreen";
 import { useAuthStore } from "./store/authStore";
-import type { Club } from "./types";
+import type { Club, NotificationTargetScreen } from "./types";
 import { notificationService } from "./services/notificationService";
 
 LogBox.ignoreAllLogs(true);
@@ -60,6 +60,7 @@ export default function App() {
   const [editingEventId, setEditingEventId] = useState<string>("");
   const [attendanceEventId, setAttendanceEventId] = useState<string>("");
   const [attendanceEventTitle, setAttendanceEventTitle] = useState<string>("");
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const user = useAuthStore((state) => state.user);
   const initializeAuthListener = useAuthStore((state) => state.initializeAuthListener);
@@ -79,11 +80,26 @@ export default function App() {
     notificationService.registerForPushNotificationsAsync(user.uid);
   }, [user]);
 
+  // Üst menüdeki zil ikonunda canlı okunmamış sayısı
+  useEffect(() => {
+    if (!user?.uid) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const unsubscribe = notificationService.subscribeToUnreadCount(user.uid, setUnreadCount);
+    return unsubscribe;
+  }, [user?.uid]);
+
   // Oturum durumuna göre başlangıç ekranını eşitle
   useEffect(() => {
     if (user && AUTH_SCREENS.includes(currentScreen)) {
       setScreenHistory(["clubs"]);
-    } else if (!user && !AUTH_SCREENS.includes(currentScreen) && currentScreen !== "accept-invite") {
+    } else if (
+      !user &&
+      !AUTH_SCREENS.includes(currentScreen) &&
+      currentScreen !== "accept-invite"
+    ) {
       setScreenHistory(["login"]);
     }
   }, [user, currentScreen]);
@@ -266,9 +282,33 @@ export default function App() {
               borderColor: currentScreen === "notifications" ? "#6366f1" : "#1e293b",
               alignItems: "center",
               justifyContent: "center",
+              position: "relative",
             }}
           >
             <Text style={{ fontSize: 14 }}>🔔</Text>
+
+            {unreadCount > 0 && (
+              <View
+                style={{
+                  position: "absolute",
+                  top: -5,
+                  right: -5,
+                  minWidth: 16,
+                  height: 16,
+                  paddingHorizontal: 4,
+                  borderRadius: 8,
+                  backgroundColor: "#ef4444",
+                  borderWidth: 1,
+                  borderColor: "#020617",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#ffffff", fontSize: 9, fontWeight: "700" }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           {/* 6. Çıkış */}
@@ -354,7 +394,12 @@ export default function App() {
 
         {currentScreen === "announcements" && <AnnouncementsScreen onBack={goBack} />}
 
-        {currentScreen === "notifications" && <NotificationsScreen onBack={goBack} />}
+        {currentScreen === "notifications" && (
+          <NotificationsScreen
+            onBack={goBack}
+            onOpenTarget={(target: NotificationTargetScreen) => navigateTo(target)}
+          />
+        )}
 
         {currentScreen === "events" && (
           <EventsScreen

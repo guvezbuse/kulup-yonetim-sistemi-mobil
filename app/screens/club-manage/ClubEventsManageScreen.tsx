@@ -132,11 +132,17 @@ export default function ClubEventsManageScreen({
         createdAt: Timestamp.now(),
       };
 
-      await createEvent(payload);
+      const createdEventId = await createEvent(payload);
 
       if (!asDraft) {
         try {
-          await notificationService.notifyEventPublished(clubId, eventTitle, eventDateTime);
+          await notificationService.notifyEventPublished(
+            clubId,
+            clubName,
+            createdEventId,
+            eventTitle,
+            eventDateTime,
+          );
         } catch (pushErr) {
           console.log("Etkinlik bildirimi gönderilemedi:", pushErr);
         }

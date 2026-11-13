@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../lib/firebase";
+import { notificationService } from "./notificationService";
 import { ClubRole, INVITATION_STATUS, Invitation, MEMBERSHIP_STATUS } from "../types";
 
 export type InvitationItem = Invitation;
@@ -74,6 +75,11 @@ export const invitationService = {
         status: MEMBERSHIP_STATUS.ACTIVE,
         katilim_tarihi: new Date().toISOString(),
       });
+
+      // Şartname 8: üyelik/yöneticilik verildiğinde ilgili kişiye bildirim.
+      const clubSnap = await getDoc(doc(db, "clubs", clubId));
+      const clubName = clubSnap.exists() ? String(clubSnap.data().ad ?? "Kulüp") : "Kulüp";
+      await notificationService.notifyRoleInvitation(userId, clubName, role, clubId);
 
       await invitationService.deleteInvitationByEmail(clubId, cleanEmail);
 

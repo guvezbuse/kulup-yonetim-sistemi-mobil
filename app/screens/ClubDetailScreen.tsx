@@ -15,13 +15,7 @@ import { membershipService } from "../services/membershipService";
 import { notificationService } from "../services/notificationService";
 import { useAuthStore } from "../store/authStore";
 import { getErrorMessage } from "../lib/errors";
-import {
-  CLUB_ROLE,
-  Club,
-  MEMBERSHIP_STATUS,
-  MembershipStatus,
-  isClubManagerRole,
-} from "../types";
+import { CLUB_ROLE, Club, MEMBERSHIP_STATUS, MembershipStatus, isClubManagerRole } from "../types";
 
 interface ClubDetailScreenProps {
   club: Club;
@@ -97,7 +91,7 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
 
       // 2. Kulüp yöneticilerine bildirim fırlat
       try {
-        await notificationService.notifyMembershipApplication(club.id, applicantName);
+        await notificationService.notifyMembershipApplication(club.id, applicantName, club.ad);
       } catch (pushErr) {
         console.log("Kulüp yöneticisine başvuru bildirimi gönderilemedi:", pushErr);
       }

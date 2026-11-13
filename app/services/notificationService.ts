@@ -8,6 +8,7 @@ import {
   query,
   where,
   getDocs,
+  onSnapshot,
   writeBatch,
   serverTimestamp,
 } from "firebase/firestore";
@@ -21,6 +22,8 @@ import {
   JOIN_REQUEST_STATUS,
   JoinRequestStatus,
   MEMBERSHIP_STATUS,
+  NOTIFICATION_TYPE,
+  NotificationExtra,
   NotificationItem,
   TARGET_AUDIENCE,
   TargetAudience,
@@ -95,7 +98,12 @@ export const notificationService = {
   },
 
   // 2. Expo Push API Gönderimi + Firestore Bildirim Geçmişi Kaydı
-  sendPush: async (targetUserIds: string[], title: string, body: string, data = {}) => {
+  sendPush: async (
+    targetUserIds: string[],
+    title: string,
+    body: string,
+    extra: NotificationExtra = {},
+  ) => {
     if (!targetUserIds || targetUserIds.length === 0) return;
 
     const uniqueUserIds = Array.from(new Set(targetUserIds));
@@ -109,9 +117,14 @@ export const notificationService = {
             user_id: uid,
             title,
             body,
-            data,
             read: false,
             createdAt: serverTimestamp(),
+            tip: extra.tip ?? null,
+            club_id: extra.club_id ?? null,
+            club_ad: extra.club_ad ?? null,
+            hedef_ekran: extra.hedef_ekran ?? null,
+            hedef_id: extra.hedef_id ?? null,
+            data: extra.data ?? {},
           });
         });
         await batch.commit();
@@ -124,9 +137,7 @@ export const notificationService = {
       // B. Kullanıcıların cihaz push tokenlarını 30'luk "in" sorgularıyla bul
       const tokens: string[] = [];
       for (const group of chunkArray(uniqueUserIds, IN_QUERY_BATCH_SIZE)) {
-        const snap = await getDocs(
-          query(collection(db, "users"), where("__name__", "in", group)),
-        );
+        const snap = await getDocs(query(collection(db, "users"), where("__name__", "in", group)));
         snap.forEach((userDoc) => {
           const pushToken = userDoc.data().expoPushToken;
           if (typeof pushToken === "string" && pushToken.startsWith("ExponentPushToken")) {
@@ -136,13 +147,21 @@ export const notificationService = {
       }
 
       // C. Cihazlara 100'lük push batch'leri halinde gönder
+      const pushData = {
+        ...(extra.data ?? {}),
+        tip: extra.tip ?? "",
+        club_id: extra.club_id ?? "",
+        hedef_ekran: extra.hedef_ekran ?? "",
+        hedef_id: extra.hedef_id ?? "",
+      };
+
       for (const group of chunkArray(tokens, PUSH_BATCH_SIZE)) {
         const messages = group.map((to) => ({
           to,
           sound: "default",
           title,
           body,
-          data,
+          data: pushData,
         }));
 
         const response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -181,9 +200,54 @@ export const notificationService = {
       .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
   },
 
-  // Tek bildirimi okundu olarak işaretler.
+  // Tek bildirimi okundu/okunmadı olarak işaretler.
   markNotificationRead: async (notificationId: string) => {
     await updateDoc(doc(db, "notifications", notificationId), { read: true });
+  },
+
+  setNotificationRead: async (notificationId: string, read: boolean) => {
+    await updateDoc(doc(db, "notifications", notificationId), { read });
+  },
+
+  // Kullanıcının bildirimlerini gerçek zamanlı dinler.
+  // Dönen fonksiyon aboneliği kapatır.
+  subscribeToUserNotifications: (
+    userId: string,
+    onData: (items: NotificationItem[]) => void,
+    onError?: (error: unknown) => void,
+  ) => {
+    const q = query(collection(db, "notifications"), where("user_id", "==", userId));
+
+    return onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs
+          .map((item) => ({ id: item.id, ...(item.data() as Omit<NotificationItem, "id">) }))
+          .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+        onData(items);
+      },
+      (error) => {
+        console.log("Bildirim dinleme hatası:", error);
+        onError?.(error);
+      },
+    );
+  },
+
+  // Üst menüdeki zil ikonunda gösterilecek okunmamış sayısını dinler.
+  subscribeToUnreadCount: (userId: string, onCount: (count: number) => void) => {
+    const q = query(
+      collection(db, "notifications"),
+      where("user_id", "==", userId),
+      where("read", "==", false),
+    );
+
+    return onSnapshot(
+      q,
+      (snap) => onCount(snap.size),
+      (error) => {
+        console.log("Okunmamış bildirim sayısı alınamadı:", error);
+      },
+    );
   },
 
   // Kullanıcının tüm okunmamış bildirimlerini tek batch'te okundu yapar.
@@ -216,6 +280,7 @@ export const notificationService = {
     clubId: string | null | undefined,
     title: string,
     content: string,
+    options?: { announcementId?: string; clubName?: string | null },
   ) => {
     try {
       const userIds: string[] = [];
@@ -236,10 +301,7 @@ export const notificationService = {
         snap.forEach((d) => userIds.push(d.id));
       } else if (hedefKitle === TARGET_AUDIENCE.ALL_MANAGERS) {
         const snap = await getDocs(
-          query(
-            collection(db, "memberships"),
-            where("status", "==", MEMBERSHIP_STATUS.ACTIVE),
-          ),
+          query(collection(db, "memberships"), where("status", "==", MEMBERSHIP_STATUS.ACTIVE)),
         );
         snap.forEach((d) => {
           if (isClubManagerRole(d.data().role)) userIds.push(d.data().user_id);
@@ -251,7 +313,14 @@ export const notificationService = {
         });
       }
 
-      await notificationService.sendPush(userIds, `📢 ${title}`, content);
+      await notificationService.sendPush(userIds, `📢 ${title}`, content, {
+        tip: NOTIFICATION_TYPE.ANNOUNCEMENT,
+        club_id: clubId ?? null,
+        club_ad: options?.clubName ?? null,
+        hedef_ekran: "announcements",
+        hedef_id: options?.announcementId ?? null,
+        data: { kapsam, hedef_kitle: hedefKitle },
+      });
     } catch (err) {
       console.log("notifyAnnouncement hatası:", err);
     }
@@ -260,6 +329,8 @@ export const notificationService = {
   // Kural 2: Etkinlik yayınlandığında → kulüp üyeleri (veya üniversite geneli)
   notifyEventPublished: async (
     clubId: string | null | undefined,
+    clubName: string | null | undefined,
+    eventId: string,
     eventTitle: string,
     eventDate: string,
   ) => {
@@ -278,6 +349,13 @@ export const notificationService = {
           userIds,
           "🎉 Yeni Kulüp Etkinliği!",
           `${eventTitle} etkinliği yayınlandı. Tarih: ${eventDate}`,
+          {
+            tip: NOTIFICATION_TYPE.EVENT,
+            club_id: clubId,
+            club_ad: clubName ?? null,
+            hedef_ekran: "events",
+            hedef_id: eventId,
+          },
         );
       } else {
         const snap = await getDocs(collection(db, "users"));
@@ -286,6 +364,11 @@ export const notificationService = {
           userIds,
           "🏛️ Üniversite Geneli Etkinlik!",
           `${eventTitle} tüm öğrencilere açıldı.`,
+          {
+            tip: NOTIFICATION_TYPE.EVENT,
+            hedef_ekran: "events",
+            hedef_id: eventId,
+          },
         );
       }
     } catch (err) {
@@ -294,7 +377,11 @@ export const notificationService = {
   },
 
   // Kural 3: Üyelik başvurusu geldiğinde → ilgili kulübün yöneticileri
-  notifyMembershipApplication: async (clubId: string, applicantName: string) => {
+  notifyMembershipApplication: async (
+    clubId: string,
+    applicantName: string,
+    clubName?: string | null,
+  ) => {
     try {
       const managerIds: string[] = [];
       const snap = await getDocs(
@@ -310,6 +397,13 @@ export const notificationService = {
         managerIds,
         "📥 Yeni Üyelik Başvurusu",
         `${applicantName} kulübünüze katılmak için başvurdu.`,
+        {
+          tip: NOTIFICATION_TYPE.APPLICATION,
+          club_id: clubId,
+          club_ad: clubName ?? null,
+          hedef_ekran: "clubs",
+          data: { basvuran: applicantName },
+        },
       );
     } catch (err) {
       console.log("notifyMembershipApplication hatası:", err);
@@ -321,17 +415,21 @@ export const notificationService = {
     targetUserId: string,
     clubName: string,
     status: JoinRequestStatus,
+    clubId?: string | null,
   ) => {
     try {
-      const title =
-        status === JOIN_REQUEST_STATUS.APPROVED
-          ? "🎉 Başvurunuz Onaylandı!"
-          : "ℹ️ Başvuru Durumu";
-      const body =
-        status === JOIN_REQUEST_STATUS.APPROVED
-          ? `Tebrikler! ${clubName} kulübüne üyelik başvurunuz onaylandı.`
-          : `${clubName} kulübüne yaptığınız üyelik başvurusu reddedildi.`;
-      await notificationService.sendPush([targetUserId], title, body);
+      const approved = status === JOIN_REQUEST_STATUS.APPROVED;
+      const title = approved ? "🎉 Başvurunuz Onaylandı!" : "ℹ️ Başvuru Durumu";
+      const body = approved
+        ? `Tebrikler! ${clubName} kulübüne üyelik başvurunuz onaylandı.`
+        : `${clubName} kulübüne yaptığınız üyelik başvurusu reddedildi.`;
+      await notificationService.sendPush([targetUserId], title, body, {
+        tip: NOTIFICATION_TYPE.DECISION,
+        club_id: clubId ?? null,
+        club_ad: clubName,
+        hedef_ekran: "clubs",
+        data: { durum: status },
+      });
     } catch (err) {
       console.log("notifyApplicationDecision hatası:", err);
     }
@@ -342,12 +440,20 @@ export const notificationService = {
     targetUserId: string,
     clubName: string,
     role: ClubRole,
+    clubId?: string | null,
   ) => {
     try {
       await notificationService.sendPush(
         [targetUserId],
         "✉️ Yeni Rol / Davet",
         `${clubName} kulübünde size '${role}' yetkisi tanımlandı.`,
+        {
+          tip: NOTIFICATION_TYPE.INVITATION,
+          club_id: clubId ?? null,
+          club_ad: clubName,
+          hedef_ekran: "clubs",
+          data: { rol: role },
+        },
       );
     } catch (err) {
       console.log("notifyRoleInvitation hatası:", err);

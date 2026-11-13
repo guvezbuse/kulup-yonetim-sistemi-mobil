@@ -114,7 +114,7 @@ export default function ClubMembersManageScreen({
     try {
       await membershipService.approveRequest(item.id, clubId, item.user_id);
       void notificationService
-        .notifyApplicationDecision(item.user_id, clubName, JOIN_REQUEST_STATUS.APPROVED)
+        .notifyApplicationDecision(item.user_id, clubName, JOIN_REQUEST_STATUS.APPROVED, clubId)
         .catch((e) => console.log("Onay bildirimi gönderilemedi:", e));
       Alert.alert("Onaylandı", `${item.user_email} kulübe kabul edildi.`);
       loadData();
@@ -127,7 +127,7 @@ export default function ClubMembersManageScreen({
     try {
       await membershipService.rejectRequest(item.id, clubId, item.user_id);
       void notificationService
-        .notifyApplicationDecision(item.user_id, clubName, JOIN_REQUEST_STATUS.REJECTED)
+        .notifyApplicationDecision(item.user_id, clubName, JOIN_REQUEST_STATUS.REJECTED, clubId)
         .catch((e) => console.log("Red bildirimi gönderilemedi:", e));
       Alert.alert("Reddedildi", `${item.user_email} başvurusu reddedildi.`);
       loadData();
@@ -166,7 +166,11 @@ export default function ClubMembersManageScreen({
   const handleToggleRole = async () => {
     if (!selectedMember) return;
     try {
-      await membershipService.toggleMemberRole(selectedMember.membership_id, selectedMember.role);
+      await membershipService.toggleMemberRole(selectedMember.membership_id, selectedMember.role, {
+        userId: selectedMember.user_id,
+        clubId,
+        clubName,
+      });
       closeMemberModal();
       loadData();
     } catch (err) {
