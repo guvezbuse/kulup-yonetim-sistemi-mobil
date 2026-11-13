@@ -25,6 +25,7 @@ import {
   NOTIFICATION_TYPE,
   NotificationExtra,
   NotificationItem,
+  NotificationTargetScreen,
   TARGET_AUDIENCE,
   TargetAudience,
   isClubManagerRole,
@@ -248,6 +249,32 @@ export const notificationService = {
         console.log("Okunmamış bildirim sayısı alınamadı:", error);
       },
     );
+  },
+
+  // Push bildirimine tıklandığında gidilecek ekranı dinler.
+  // Uygulama kapalıyken gelen bildirime tıklanarak açılma durumu da kapsanır.
+  subscribeToNotificationResponses: (onOpen: (target: NotificationTargetScreen) => void) => {
+    if (!Notifications) return () => {};
+
+    const resolveTarget = (data: Record<string, unknown> | undefined) => {
+      const hedef = data?.hedef_ekran;
+      if (hedef === "announcements" || hedef === "events" || hedef === "clubs") {
+        onOpen(hedef);
+      }
+    };
+
+    // Uygulama kapalıyken gelen bildirime tıklanarak açıldıysa
+    const lastResponse = Notifications.getLastNotificationResponse?.();
+    if (lastResponse) {
+      resolveTarget(lastResponse.notification.request.content.data);
+      Notifications.clearLastNotificationResponse?.();
+    }
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      resolveTarget(response.notification.request.content.data);
+    });
+
+    return () => subscription.remove();
   },
 
   // Kullanıcının tüm okunmamış bildirimlerini tek batch'te okundu yapar.

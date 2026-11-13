@@ -91,6 +91,17 @@ export default function App() {
     return unsubscribe;
   }, [user?.uid]);
 
+  // Push bildirimine tıklanınca ilgili ekrana git
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const unsubscribe = notificationService.subscribeToNotificationResponses((target) => {
+      setScreenHistory((prev) => (prev[prev.length - 1] === target ? prev : [...prev, target]));
+    });
+
+    return unsubscribe;
+  }, [user?.uid]);
+
   // Oturum durumuna göre başlangıç ekranını eşitle
   useEffect(() => {
     if (user && AUTH_SCREENS.includes(currentScreen)) {
