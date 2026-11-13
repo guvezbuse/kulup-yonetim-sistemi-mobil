@@ -3,21 +3,16 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   addDoc,
   deleteDoc,
   doc,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../lib/firebase";
-import {
-  ClubRole,
-  INVITATION_STATUS,
-  Invitation,
-  MEMBERSHIP_STATUS,
-} from "../types";
+import { ClubRole, INVITATION_STATUS, Invitation, MEMBERSHIP_STATUS } from "../types";
 
 export type InvitationItem = Invitation;
 
@@ -94,7 +89,9 @@ export const invitationService = {
     const token = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
 
-    await addDoc(collection(db, "invitations"), {
+    // Belge kimliği = token. Böylece giriş yapmadan yalnızca tam token ile
+    // tek belge okunabilir; davet listesi herkese açık olmaz.
+    await setDoc(doc(db, "invitations", token), {
       email: cleanEmail,
       club_id: clubId,
       role: role,
@@ -116,14 +113,23 @@ export const invitationService = {
 
   // 3. Davet Linkini Yenileme
   resendInvitation: async (inviteId: string) => {
+    const oldSnap = await getDoc(doc(db, "invitations", inviteId));
+    if (!oldSnap.exists()) {
+      throw new Error("Davet bulunamadı.");
+    }
+
     const token = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
 
-    await updateDoc(doc(db, "invitations", inviteId), {
+    // Kimlik = token olduğu için yenileme, yeni belge oluşturup eskisini siler.
+    await setDoc(doc(db, "invitations", token), {
+      ...oldSnap.data(),
       token: token,
       son_gecerlilik_tarihi: expiresAt,
       durum: INVITATION_STATUS.PENDING,
+      createdAt: serverTimestamp(),
     });
+    await deleteDoc(doc(db, "invitations", inviteId));
 
     return {
       newInviteLink: `https://kulupyonetim.app/join?token=${token}`,
@@ -133,19 +139,16 @@ export const invitationService = {
   // 4. Token Doğrulama (InviteAcceptScreen'in Çağırdığı Fonksiyon)
   verifyToken: async (token: string): Promise<InvitationItem> => {
     const cleanToken = token.trim();
-    const invitationsRef = collection(db, "invitations");
-    const q = query(invitationsRef, where("token", "==", cleanToken));
-    const snap = await getDocs(q);
+    const docSnap = await getDoc(doc(db, "invitations", cleanToken));
 
-    if (snap.empty) {
+    if (!docSnap.exists()) {
       throw new Error("Geçersiz veya bulunamayan davet kodu!");
     }
 
-    const docSnap = snap.docs[0];
     const data = docSnap.data();
 
     if (data.son_gecerlilik_tarihi && new Date(data.son_gecerlilik_tarihi) < new Date()) {
-      await deleteDoc(doc(db, "invitations", docSnap.id));
+      // Giriş yapılmadan silme yetkisi yok; süre kontrolü yeterli.
       throw new Error("Bu davet kodunun 72 saatlik geçerlilik süresi dolmuş.");
     }
 
@@ -190,12 +193,15 @@ export const invitationService = {
       createdAt: serverTimestamp(),
     });
 
+    // davet_token, güvenlik kurallarının üyeliğin gerçek bir davete
+    // dayandığını doğrulaması için zorunludur.
     await addDoc(collection(db, "memberships"), {
       club_id: invite.club_id,
       user_id: user.uid,
       role: invite.role,
       status: MEMBERSHIP_STATUS.ACTIVE,
       katilim_tarihi: new Date().toISOString(),
+      davet_token: invite.token,
     });
 
     // Kabul edildiği için daveti Firestore'dan siliyoruz

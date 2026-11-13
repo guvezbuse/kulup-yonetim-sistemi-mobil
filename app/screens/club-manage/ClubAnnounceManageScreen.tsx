@@ -17,12 +17,16 @@ interface ClubAnnounceManageScreenProps {
   clubId: string;
   clubName: string;
   onBack?: () => void;
+  // Sistem yöneticisi (kulübün yöneticisi değil) için salt görüntüleme modu.
+  // Şartname: kulüp duyurusu yayınlama Admin ✘ / Yönetici ✔
+  isAdminView?: boolean;
 }
 
 export default function ClubAnnounceManageScreen({
   clubId,
   clubName,
   onBack,
+  isAdminView = false,
 }: ClubAnnounceManageScreenProps) {
   const user = useAuthStore((state) => state.user);
 
@@ -111,14 +115,25 @@ export default function ClubAnnounceManageScreen({
           </View>
         </View>
 
-        <TouchableOpacity
-          onPress={() => setIsCreateModalOpen(true)}
-          className="bg-indigo-600 px-3 py-2 rounded-xl flex-row items-center"
-          activeOpacity={0.7}
-        >
-          <Text className="text-white font-bold text-xs">+ Yeni Duyuru</Text>
-        </TouchableOpacity>
+        {!isAdminView && (
+          <TouchableOpacity
+            onPress={() => setIsCreateModalOpen(true)}
+            className="bg-indigo-600 px-3 py-2 rounded-xl flex-row items-center"
+            activeOpacity={0.7}
+          >
+            <Text className="text-white font-bold text-xs">+ Yeni Duyuru</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {isAdminView && (
+        <View className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-3">
+          <Text className="text-amber-400 text-[11px] font-bold">🛡️ Salt Görüntüleme</Text>
+          <Text className="text-slate-400 text-[11px] mt-1 leading-4">
+            Sistem yöneticisi olarak kulüp duyurusu oluşturamaz, düzenleyemez veya silemezsiniz.
+          </Text>
+        </View>
+      )}
 
       {/* ESKİ VE MEVCUT DUYURULAR LİSTESİ */}
       {loading ? (
@@ -157,21 +172,23 @@ export default function ClubAnnounceManageScreen({
                   </View>
 
                   {/* DÜZENLE VE SİL BUTONLARI */}
-                  <View className="flex-row items-center gap-1.5">
-                    <TouchableOpacity
-                      onPress={() => setEditingAnnouncement(item)}
-                      className="bg-amber-500/20 p-1.5 rounded-lg border border-amber-500/30"
-                    >
-                      <Text className="text-xs">✏️</Text>
-                    </TouchableOpacity>
+                  {!isAdminView && (
+                    <View className="flex-row items-center gap-1.5">
+                      <TouchableOpacity
+                        onPress={() => setEditingAnnouncement(item)}
+                        className="bg-amber-500/20 p-1.5 rounded-lg border border-amber-500/30"
+                      >
+                        <Text className="text-xs">✏️</Text>
+                      </TouchableOpacity>
 
-                    <TouchableOpacity
-                      onPress={() => handleDeleteAnnouncement(item.id, item.baslik)}
-                      className="bg-red-500/20 p-1.5 rounded-lg border border-red-500/30"
-                    >
-                      <Text className="text-xs">🗑️</Text>
-                    </TouchableOpacity>
-                  </View>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteAnnouncement(item.id, item.baslik)}
+                        className="bg-red-500/20 p-1.5 rounded-lg border border-red-500/30"
+                      >
+                        <Text className="text-xs">🗑️</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -188,21 +205,25 @@ export default function ClubAnnounceManageScreen({
       )}
 
       {/* YENİ KULÜP DUYURUSU OLUŞTURMA MODALI */}
-      <CreateClubAnnouncementModal
-        visible={isCreateModalOpen}
-        clubId={clubId}
-        clubName={clubName}
-        onClose={() => setIsCreateModalOpen(false)}
-        onSuccess={() => loadClubAnnouncements()}
-      />
+      {!isAdminView && (
+        <>
+          <CreateClubAnnouncementModal
+            visible={isCreateModalOpen}
+            clubId={clubId}
+            clubName={clubName}
+            onClose={() => setIsCreateModalOpen(false)}
+            onSuccess={() => loadClubAnnouncements()}
+          />
 
-      {/* DUYURU DÜZENLEME MODALI */}
-      <EditAnnouncementModal
-        visible={Boolean(editingAnnouncement)}
-        announcement={editingAnnouncement}
-        onClose={() => setEditingAnnouncement(null)}
-        onSuccess={() => loadClubAnnouncements()}
-      />
+          {/* DUYURU DÜZENLEME MODALI */}
+          <EditAnnouncementModal
+            visible={Boolean(editingAnnouncement)}
+            announcement={editingAnnouncement}
+            onClose={() => setEditingAnnouncement(null)}
+            onSuccess={() => loadClubAnnouncements()}
+          />
+        </>
+      )}
     </View>
   );
 }

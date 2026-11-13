@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "app",
+    "name": "Kulüp Yönetim Sistemi",
     "slug": "app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -17,7 +17,13 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.buseguvez.kulupyonetimsistemimobil"
+      "package": "com.buseguvez.kulupyonetimsistemimobil",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -45,6 +51,12 @@
           "barcodeScannerEnabled": true
         }
       ]
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4aa2263e-5e36-4dca-a382-2d8c9da28f5e"
+    }
   }
 }

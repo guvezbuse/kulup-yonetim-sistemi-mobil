@@ -11,15 +11,67 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     // Sistem admini tek kaynaktan okunur: users/{uid}.is_admin === true
+    // exists() kontrolü, kullanıcı belgesi henüz oluşmamışken kuralın
+    // hata vermesini engeller.
     function isSuperAdmin() {
       return isSignedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid))
-             .data.get('is_admin', false) == true;
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && currentUser().get('is_admin', false) == true;
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Güncellemede yalnızca izin verilen alanların değişmesini sağlar.
+    function changedKeysOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // Etkinliği oluşturan kişi (kulüp yöneticisi) kontrolü.
+    function isEventOwner(eventId) {
+      return isSignedIn()
+        && eventId != ''
+        && exists(/databases/$(database)/documents/events/$(eventId))
+        && get(/databases/$(database)/documents/events/$(eventId))
+             .data.get('olusturan_id', '') == request.auth.uid;
+    }
+
+    // Üye yalnızca kendi katılım kaydını ekleyip çıkarabilir.
+    // (Katıl / ayrıl işlemleri events.katilimcilar dizisini günceller.)
+    function isSelfParticipationChange() {
+      let before = resource.data.get('katilimcilar', []);
+      let after = request.resource.data.get('katilimcilar', []);
+      let added = after.toSet().difference(before.toSet());
+      let removed = before.toSet().difference(after.toSet());
+
+      return changedKeysOnly(['katilimcilar'])
+        && (
+          (added.hasOnly([request.auth.uid]) && added.size() == 1 && removed.size() == 0)
+          || (removed.hasOnly([request.auth.uid]) && removed.size() == 1 && added.size() == 0)
+        );
+    }
+
+    // Davet kabulünde üyeliğin gerçek bir davete dayandığını doğrular.
+    // Üyelik belgesindeki davet_token, invitations/{token} belgesiyle eşleşmeli.
+    function hasValidInvitation(clubId, role) {
+      let token = request.resource.data.get('davet_token', '');
+      let targetEmail = get(/databases/$(database)/documents/users/$(request.resource.data.user_id))
+                           .data.get('email', '');
+
+      return token != ''
+        && exists(/databases/$(database)/documents/invitations/$(token))
+        && get(/databases/$(database)/documents/invitations/$(token))
+             .data.get('club_id', '') == clubId
+        && get(/databases/$(database)/documents/invitations/$(token))
+             .data.get('role', '') == role
+        && get(/databases/$(database)/documents/invitations/$(token))
+             .data.get('email', '') == targetEmail;
     }
 
     // =========================================================
@@ -27,7 +79,7 @@ service cloud.firestore {
     // =========================================================
 
     match /users/{userId} {
-      // Profil listeleri, yoklama isimleri ve katılımcı bilgileri için gerekli.
+      // Profil listeleri, üye listeleri, yoklama isimleri için gerekli.
       allow read: if isSignedIn();
 
       // Kayıt olan / davet kabul eden kullanıcı yalnızca KENDİ belgesini
@@ -35,8 +87,8 @@ service cloud.firestore {
       allow create: if isOwner(userId)
         && request.resource.data.get('is_admin', false) == false;
 
-      // Kullanıcı kendi profilini güncelleyebilir ama is_admin alanını
-      // değiştiremez. Admin ise herkesin is_admin alanını değiştirebilir.
+      // Kullanıcı kendi profilini ve push token'ını güncelleyebilir ama
+      // is_admin alanını değiştiremez. Admin herkesi güncelleyebilir.
       allow update: if isSuperAdmin()
         || (isOwner(userId)
             && request.resource.data.get('is_admin', false)
@@ -55,8 +107,14 @@ service cloud.firestore {
       // Kulüp oluşturma/silme yalnızca sistem admini.
       allow create, delete: if isSuperAdmin();
 
-      // Kulüp yöneticileri kulüp bilgilerini güncelleyebilir.
-      allow update: if isSignedIn();
+      // Kulüp bilgileri yalnızca tanımlı alanlar üzerinden güncellenebilir.
+      // Aktif/pasif durumu yalnızca sistem admini değiştirebilir.
+      // Not: Firestore kuralları koleksiyon sorgusu yapamadığı için "bu kulübün
+      // yöneticisi mi?" kontrolü burada yapılamıyor. Yönetici kontrolü istemci
+      // tarafında yapılıyor; ileride club_managers koleksiyonu ile sıkılaştırılmalı.
+      allow update: if isSuperAdmin()
+        || (isSignedIn()
+            && changedKeysOnly(['ad', 'aciklama', 'detayliAciklama', 'gorselUrl']));
     }
 
     // =========================================================
@@ -64,7 +122,24 @@ service cloud.firestore {
     // =========================================================
 
     match /join_requests/{requestId} {
-      allow read, create, update, delete: if isSignedIn();
+      // Yönetici kendi kulübünün başvurularını, üye kendi başvurusunu okur.
+      allow read: if isSignedIn();
+
+      // Kullanıcı yalnızca kendi adına ve "beklemede" durumunda başvuru açar.
+      allow create: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.club_id is string
+        && request.resource.data.durum == 'beklemede';
+
+      // Onay/red yalnızca durum alanlarını değiştirebilir.
+      // Başvuru sahibi kendi talebini onaylayamaz/reddedemez.
+      allow update: if isSignedIn()
+        && request.auth.uid != resource.data.get('user_id', '')
+        && changedKeysOnly(['durum', 'updatedAt', 'karar_tarihi'])
+        && request.resource.data.durum in ['onaylandi', 'reddedildi'];
+
+      // Talep kayıtları normalde silinmez; kulüp silme temizliği admin'e açıktır.
+      allow delete: if isSuperAdmin();
     }
 
     // =========================================================
@@ -72,9 +147,42 @@ service cloud.firestore {
     // =========================================================
 
     match /memberships/{membershipId} {
-      // Kulüp yöneticileri başvuru onaylarken başka kullanıcı adına kayıt
-      // oluşturduğu için yazma izni oturum açmış kullanıcılara bırakıldı.
-      allow read, create, update, delete: if isSignedIn();
+      allow read: if isSignedIn();
+
+      // Başvuru, davet kabulü, yönetici onayı ve doğrudan ekleme bu yolu kullanır.
+      // Kullanıcı kendisi için yalnızca "beklemede/üye" kaydı açabilir; kendini
+      // doğrudan aktif üye veya yönetici yapamaz. Aktif kayıt için ya geçerli bir
+      // davet ya da başka bir kullanıcı (yönetici/admin) adına işlem gerekir.
+      allow create: if isSignedIn()
+        && request.resource.data.club_id is string
+        && request.resource.data.user_id is string
+        && request.resource.data.role in ['uye', 'yonetici']
+        && request.resource.data.status in ['beklemede', 'aktif', 'pasif', 'reddedildi']
+        && (
+          (request.resource.data.user_id == request.auth.uid
+            && request.resource.data.status == 'beklemede'
+            && request.resource.data.role == 'uye')
+          || request.resource.data.user_id != request.auth.uid
+          || hasValidInvitation(
+               request.resource.data.club_id,
+               request.resource.data.role
+             )
+        );
+
+      // Rol/durum dışındaki alanlar (club_id, user_id) değiştirilemez.
+      // Kullanıcı kendi üyeliğini yalnızca yeniden başvuru için
+      // "beklemede/üye" durumuna çekebilir; kendini onaylayamaz veya
+      // kendine yönetici rolü veremez.
+      allow update: if isSignedIn()
+        && changedKeysOnly(['role', 'status', 'katilim_tarihi'])
+        && (
+          resource.data.get('user_id', '') != request.auth.uid
+          || (request.resource.data.status == 'beklemede'
+              && request.resource.data.role == 'uye')
+        );
+
+      // Üye çıkarma ve onay sırasındaki mükerrer temizliği için gerekli.
+      allow delete: if isSignedIn();
     }
 
     // =========================================================
@@ -82,13 +190,26 @@ service cloud.firestore {
     // =========================================================
 
     match /invitations/{inviteId} {
-      // Davet kodu giriş yapılmadan önce sorgulanır.
-      allow read: if true;
+      // Davet belgesinin kimliği token'ın kendisidir. Giriş yapmadan yalnızca
+      // TAM token ile tek belge okunabilir; listelemek için oturum gerekir.
+      allow get: if true;
+      allow list: if isSignedIn();
 
-      allow create, update: if isSignedIn();
+      // Davet oluşturma yönetici panelinden yapılır; kimlik = token kuralı.
+      // Kişinin kendi e-postasına davet üretmesi engellenir (kendini kulübe
+      // yönetici olarak ekleme girişimini zorlaştırır).
+      allow create: if isSignedIn()
+        && inviteId == request.resource.data.token
+        && request.resource.data.club_id is string
+        && request.resource.data.email is string
+        && request.resource.data.role in ['uye', 'yonetici']
+        && request.resource.data.email.lower() != currentUser().get('email', '').lower();
 
-      // Süresi dolmuş davet, giriş öncesi temizlendiği için açık bırakıldı.
-      allow delete: if true;
+      // Yenileme eski belgeyi silip yeni token ile belge oluşturur.
+      allow update: if false;
+
+      // Davet kabulü (yeni kullanıcı oturumu) ve yönetici iptali.
+      allow delete: if isSignedIn();
     }
 
     // =========================================================
@@ -96,7 +217,28 @@ service cloud.firestore {
     // =========================================================
 
     match /announcements/{announcementId} {
-      allow read, create, update, delete: if isSignedIn();
+      allow read: if isSignedIn();
+
+      // Sistem duyurusu yalnızca admin; kulüp duyurusu kulüp adına ve
+      // yayınlayanın kendi kimliğiyle oluşturulabilir.
+      allow create: if isSignedIn()
+        && request.resource.data.yayinlayan_id == request.auth.uid
+        && (
+          (request.resource.data.kapsam == 'sistem'
+            && request.resource.data.club_id == null
+            && isSuperAdmin())
+          || (request.resource.data.kapsam == 'kulup'
+            && request.resource.data.club_id is string)
+        );
+
+      // Yalnızca içerik alanları güncellenebilir.
+      allow update: if isSuperAdmin()
+        || (isSignedIn()
+            && resource.data.get('yayinlayan_id', '') == request.auth.uid
+            && changedKeysOnly(['baslik', 'icerik', 'updatedAt']));
+
+      allow delete: if isSuperAdmin()
+        || (isSignedIn() && resource.data.get('yayinlayan_id', '') == request.auth.uid);
     }
 
     // =========================================================
@@ -104,16 +246,39 @@ service cloud.firestore {
     // =========================================================
 
     match /events/{eventId} {
-      // Üyeler katıl/ayrıl işleminde katilimcilar alanını günceller.
-      allow read, create, update, delete: if isSignedIn();
+      allow read: if isSignedIn();
+
+      // Kulüp etkinliğini oluşturan kişi kendi kimliğini yazmak zorundadır.
+      // Sistem geneli etkinlik (club_id yok) yalnızca admin tarafından açılır.
+      allow create: if isSignedIn()
+        && request.resource.data.olusturan_id == request.auth.uid
+        && (
+          (request.resource.data.club_id == null && isSuperAdmin())
+          || request.resource.data.club_id is string
+        );
+
+      // Admin her etkinliği; yönetici yalnızca kendi oluşturduğu etkinliği
+      // düzenleyebilir. Üyeler yalnızca kendi katılım durumlarını değiştirebilir.
+      allow update: if isSuperAdmin()
+        || (isSignedIn()
+            && resource.data.get('olusturan_id', '') == request.auth.uid
+            && changedKeysOnly([
+              'baslik', 'aciklama', 'konum', 'tarih', 'kontenjan',
+              'gorselUrl', 'hedef_kitle', 'status', 'katilimcilar'
+            ]))
+        || isSelfParticipationChange();
+
+      allow delete: if isSuperAdmin()
+        || (isSignedIn() && resource.data.get('olusturan_id', '') == request.auth.uid);
     }
 
     // =========================================================
-    // ETKİNLİK BAŞVURULARI (eski şema - geriye dönük kayıtlar için)
+    // ETKİNLİK BAŞVURULARI (eski şema - kullanılmıyor)
     // =========================================================
 
     match /event_applications/{appId} {
-      allow read, create, update, delete: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
     }
 
     // =========================================================
@@ -121,14 +286,22 @@ service cloud.firestore {
     // =========================================================
 
     match /notifications/{notificationId} {
-      // Kullanıcı yalnızca kendi bildirimlerini okuyabilir ve
-      // okundu olarak işaretleyebilir.
-      allow read, update: if isSignedIn()
+      // Kullanıcı yalnızca kendi bildirimlerini okuyabilir.
+      allow read: if isSignedIn()
         && resource.data.get('user_id', '') == request.auth.uid;
 
-      // Bildirim kaydı, duyuru/etkinlik yayınlayan oturum açmış kullanıcı
-      // tarafından hedef kullanıcılar adına oluşturulur.
-      allow create: if isSignedIn();
+      // Bildirim kaydı, duyuru/etkinlik/başvuru tetikleyicisi tarafından
+      // hedef kullanıcılar adına oluşturulur.
+      allow create: if isSignedIn()
+        && request.resource.data.user_id is string
+        && request.resource.data.title is string
+        && request.resource.data.body is string
+        && request.resource.data.read == false;
+
+      // Yalnızca okundu bilgisi değiştirilebilir.
+      allow update: if isSignedIn()
+        && resource.data.get('user_id', '') == request.auth.uid
+        && changedKeysOnly(['read']);
 
       allow delete: if false;
     }
@@ -138,15 +311,25 @@ service cloud.firestore {
     // =========================================================
 
     match /attendance/{attendanceId} {
-      // Admin tüm yoklamaları, üye yalnızca kendi yoklamasını görebilir.
+      // Admin tüm yoklamaları, üye kendi yoklamasını, etkinlik sahibi
+      // yönetici kendi etkinliğinin yoklamasını görebilir.
       allow read: if isSignedIn()
-        && (isSuperAdmin() || resource.data.get('user_id', '') == request.auth.uid);
+        && (
+          isSuperAdmin()
+          || resource.data.get('user_id', '') == request.auth.uid
+          || (resource.data.get('event_id', '') != ''
+            && isEventOwner(resource.data.get('event_id', '')))
+        );
 
-      // Yoklama yalnızca sistem admini tarafından ve kendi adına alınabilir.
-      allow create: if isSuperAdmin()
-        && request.resource.data.get('alan_yonetici_id', '') == request.auth.uid;
+      // Yoklama, işlemi yapan kişi adına ve yalnızca admin veya etkinlik
+      // sahibi yönetici tarafından alınabilir.
+      allow create: if isSignedIn()
+        && request.resource.data.alan_yonetici_id == request.auth.uid
+        && (isSuperAdmin() || isEventOwner(request.resource.data.get('event_id', '')));
 
-      allow update, delete: if false;
+      // Yoklama kaydı değiştirilemez; yalnızca kulüp silme temizliğinde admin siler.
+      allow update: if false;
+      allow delete: if isSuperAdmin();
     }
 
     // =========================================================

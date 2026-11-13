@@ -216,7 +216,8 @@ export default function ClubDetailScreen({ club, onBack, onManage }: ClubDetailS
                 </Text>
                 <Text className="text-slate-300 text-xs mt-1 leading-5">
                   Sistem yöneticileri genel denetim yetkisine sahip olduklarından kulüplere üye
-                  olamazlar. Kulüp ayarlarını ve yetkilerini Admin Paneli üzerinden
+                  olamazlar. Kulüp ayarlarını ve yetkilerini kulüpler listesindeki{" "}
+                  <Text className="text-amber-300 font-semibold">Yönet</Text> butonundan
                   yönetebilirsiniz.
                 </Text>
               </Card>

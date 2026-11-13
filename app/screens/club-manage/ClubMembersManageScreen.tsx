@@ -33,9 +33,18 @@ interface Props {
   clubId: string;
   clubName: string;
   onBack: () => void;
+  // Sistem yöneticisi (kulübün yöneticisi değil) için kısıtlı mod.
+  // Şartname: başvuru onaylama/reddetme ve üye kaydı oluşturma Admin ✘,
+  // aktiflik/rol yönetimi Admin ✔
+  isAdminView?: boolean;
 }
 
-export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Props) {
+export default function ClubMembersManageScreen({
+  clubId,
+  clubName,
+  onBack,
+  isAdminView = false,
+}: Props) {
   const [requests, setRequests] = useState<JoinRequestItem[]>([]);
   const [members, setMembers] = useState<ClubMemberDetail[]>([]);
   const [invitations, setInvitations] = useState<InvitationItem[]>([]);
@@ -285,6 +294,18 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
 
       <Text className="text-2xl font-bold text-white mb-4">👥 Üye ve Davet Yönetimi</Text>
 
+      {isAdminView && (
+        <View className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4">
+          <Text className="text-amber-400 text-[11px] font-bold">
+            🛡️ Sistem Yöneticisi Görünümü
+          </Text>
+          <Text className="text-slate-400 text-[11px] mt-1 leading-4">
+            Başvuruları ve üyeleri görüntüleyebilir, üye durumunu ve rolünü yönetebilirsiniz.
+            Başvuru onaylama/reddetme ve yeni üye daveti kulüp yöneticisine aittir.
+          </Text>
+        </View>
+      )}
+
       {/* 1. BEKLEYEN BAŞVURULAR */}
       <Text className="text-base font-bold text-white mb-2">
         Bekleyen Başvurular ({requests.length})
@@ -312,18 +333,26 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                 ) : null}
               </View>
               <View className="flex-row gap-1.5">
-                <TouchableOpacity
-                  onPress={() => handleApprove(item)}
-                  className="bg-emerald-600 px-2.5 py-1.5 rounded-lg"
-                >
-                  <Text className="text-white text-[11px] font-bold">Onayla</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleReject(item)}
-                  className="bg-rose-600 px-2.5 py-1.5 rounded-lg"
-                >
-                  <Text className="text-white text-[11px] font-bold">Reddet</Text>
-                </TouchableOpacity>
+                {isAdminView ? (
+                  <Text className="text-amber-400/80 text-[10px] font-semibold italic">
+                    Onay/red kulüp yöneticisine aittir
+                  </Text>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => handleApprove(item)}
+                      className="bg-emerald-600 px-2.5 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-white text-[11px] font-bold">Onayla</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleReject(item)}
+                      className="bg-rose-600 px-2.5 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-white text-[11px] font-bold">Reddet</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </View>
           ))
@@ -350,7 +379,9 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                 className="bg-slate-800 p-3 rounded-xl mb-2 border border-slate-700/80 flex-row justify-between items-center"
               >
                 <View className="flex-1 mr-2">
-                  <Text className="text-white font-bold text-xs">{item.ad_soyad || item.email}</Text>
+                  <Text className="text-white font-bold text-xs">
+                    {item.ad_soyad || item.email}
+                  </Text>
                   <Text className="text-slate-400 text-[10px]">{item.email}</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
@@ -369,12 +400,16 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                   </View>
                   <View
                     className={`px-2 py-0.5 rounded ${
-                      item.status === MEMBERSHIP_STATUS.ACTIVE ? "bg-emerald-500/20" : "bg-rose-500/20"
+                      item.status === MEMBERSHIP_STATUS.ACTIVE
+                        ? "bg-emerald-500/20"
+                        : "bg-rose-500/20"
                     }`}
                   >
                     <Text
                       className={`text-[10px] font-bold uppercase ${
-                        item.status === MEMBERSHIP_STATUS.ACTIVE ? "text-emerald-400" : "text-rose-400"
+                        item.status === MEMBERSHIP_STATUS.ACTIVE
+                          ? "text-emerald-400"
+                          : "text-rose-400"
                       }`}
                     >
                       {item.status}
@@ -425,24 +460,26 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                     </Text>
                   </Text>
                 </View>
-                <View className="flex-row items-center gap-1.5">
-                  <TouchableOpacity
-                    onPress={() => handleCancelInvite(inv.id, inv.email)}
-                    className="bg-rose-950/50 border border-rose-600/60 px-2 py-1.5 rounded-lg"
-                  >
-                    <Text className="text-rose-400 text-[10px] font-bold">İptal</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleResendInvite(inv)}
-                    className={`px-2.5 py-1.5 rounded-lg ${
-                      isExpired ? "bg-rose-600" : "bg-amber-600/90"
-                    }`}
-                  >
-                    <Text className="text-white text-[10px] font-bold">
-                      {isExpired ? "Yeniden Gönder" : "Süreyi & Linki Yenile"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {!isAdminView && (
+                  <View className="flex-row items-center gap-1.5">
+                    <TouchableOpacity
+                      onPress={() => handleCancelInvite(inv.id, inv.email)}
+                      className="bg-rose-950/50 border border-rose-600/60 px-2 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-rose-400 text-[10px] font-bold">İptal</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleResendInvite(inv)}
+                      className={`px-2.5 py-1.5 rounded-lg ${
+                        isExpired ? "bg-rose-600" : "bg-amber-600/90"
+                      }`}
+                    >
+                      <Text className="text-white text-[10px] font-bold">
+                        {isExpired ? "Yeniden Gönder" : "Süreyi & Linki Yenile"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
           })
@@ -450,77 +487,79 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
       </View>
 
       {/* 4. E-POSTA İLE DAVET OLUŞTURMA KARTI */}
-      <Card className="mb-10">
-        <Text className="text-white font-bold text-sm mb-1">E-Posta ile Üye / Yönetici Ekle</Text>
-        <Text className="text-slate-400 text-xs mb-3">
-          Öğrenci sistemde yoksa 72 saat geçerli davet bağlantısı üretilir.
-        </Text>
-        <Input
-          label="Öğrenci E-Postası"
-          placeholder="ogrenci@universite.edu.tr"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <View className="flex-row gap-3 mb-4 mt-1">
-          <TouchableOpacity
-            onPress={() => setRole(CLUB_ROLE.MEMBER)}
-            className={`flex-1 py-2 rounded-lg items-center border ${
-              role === CLUB_ROLE.MEMBER
-                ? "bg-indigo-600 border-indigo-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-xs font-bold">Kulüp Üyesi</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setRole(CLUB_ROLE.MANAGER)}
-            className={`flex-1 py-2 rounded-lg items-center border ${
-              role === CLUB_ROLE.MANAGER
-                ? "bg-amber-600 border-amber-500"
-                : "bg-slate-800 border-slate-700"
-            }`}
-          >
-            <Text className="text-white text-xs font-bold">Kulüp Yöneticisi</Text>
-          </TouchableOpacity>
-        </View>
-        <Button
-          title={role === CLUB_ROLE.MANAGER ? "Yönetici Olarak Davet Et" : "Üye Olarak Davet Et"}
-          onPress={handleSendInvite}
-          loading={inviting}
-        />
-
-        {createdInviteLink && (
-          <View className="mt-4 p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl">
-            <Text className="text-amber-400 font-bold text-xs mb-2">
-              🔗 Oluşturulan Davet Linki (72 Saat Geçerli):
-            </Text>
-            <View className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-700 mb-2.5">
-              <Text numberOfLines={2} className="text-slate-300 text-[11px] font-mono">
-                {createdInviteLink}
-              </Text>
-            </View>
-            <View className="gap-2">
-              <TouchableOpacity
-                onPress={async () => {
-                  await Clipboard.setStringAsync(createdInviteLink);
-                  Alert.alert("Kopyalandı! 📋", "Davet bağlantısı panoya kopyalandı.");
-                }}
-                className="bg-amber-600/80 py-2.5 rounded-lg items-center flex-row justify-center gap-1.5"
-              >
-                <Text className="text-white text-xs font-bold">📋 Bağlantıyı Panoya Kopyala</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSendEmailInvite}
-                className="bg-indigo-600 py-2.5 rounded-lg items-center flex-row justify-center gap-1.5"
-              >
-                <Text className="text-white text-xs font-bold">✉️ E-Posta ile Gönder</Text>
-              </TouchableOpacity>
-            </View>
+      {!isAdminView && (
+        <Card className="mb-10">
+          <Text className="text-white font-bold text-sm mb-1">E-Posta ile Üye / Yönetici Ekle</Text>
+          <Text className="text-slate-400 text-xs mb-3">
+            Öğrenci sistemde yoksa 72 saat geçerli davet bağlantısı üretilir.
+          </Text>
+          <Input
+            label="Öğrenci E-Postası"
+            placeholder="ogrenci@universite.edu.tr"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <View className="flex-row gap-3 mb-4 mt-1">
+            <TouchableOpacity
+              onPress={() => setRole(CLUB_ROLE.MEMBER)}
+              className={`flex-1 py-2 rounded-lg items-center border ${
+                role === CLUB_ROLE.MEMBER
+                  ? "bg-indigo-600 border-indigo-500"
+                  : "bg-slate-800 border-slate-700"
+              }`}
+            >
+              <Text className="text-white text-xs font-bold">Kulüp Üyesi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setRole(CLUB_ROLE.MANAGER)}
+              className={`flex-1 py-2 rounded-lg items-center border ${
+                role === CLUB_ROLE.MANAGER
+                  ? "bg-amber-600 border-amber-500"
+                  : "bg-slate-800 border-slate-700"
+              }`}
+            >
+              <Text className="text-white text-xs font-bold">Kulüp Yöneticisi</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      </Card>
+          <Button
+            title={role === CLUB_ROLE.MANAGER ? "Yönetici Olarak Davet Et" : "Üye Olarak Davet Et"}
+            onPress={handleSendInvite}
+            loading={inviting}
+          />
+
+          {createdInviteLink && (
+            <View className="mt-4 p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl">
+              <Text className="text-amber-400 font-bold text-xs mb-2">
+                🔗 Oluşturulan Davet Linki (72 Saat Geçerli):
+              </Text>
+              <View className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-700 mb-2.5">
+                <Text numberOfLines={2} className="text-slate-300 text-[11px] font-mono">
+                  {createdInviteLink}
+                </Text>
+              </View>
+              <View className="gap-2">
+                <TouchableOpacity
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(createdInviteLink);
+                    Alert.alert("Kopyalandı! 📋", "Davet bağlantısı panoya kopyalandı.");
+                  }}
+                  className="bg-amber-600/80 py-2.5 rounded-lg items-center flex-row justify-center gap-1.5"
+                >
+                  <Text className="text-white text-xs font-bold">📋 Bağlantıyı Panoya Kopyala</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSendEmailInvite}
+                  className="bg-indigo-600 py-2.5 rounded-lg items-center flex-row justify-center gap-1.5"
+                >
+                  <Text className="text-white text-xs font-bold">✉️ E-Posta ile Gönder</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </Card>
+      )}
 
       {/* 5. ÜYE YÖNETİM MODALI (ROL DEĞİŞTİRME, PASİFE ALMA, SİLME) */}
       <Modal
@@ -565,16 +604,20 @@ export default function ClubMembersManageScreen({ clubId, clubName, onBack }: Pr
                 className="bg-slate-700 active:bg-slate-600 py-3 rounded-xl items-center"
               >
                 <Text className="text-slate-200 font-bold text-xs">
-                  {selectedMember?.status === MEMBERSHIP_STATUS.ACTIVE ? "Üyeyi Pasife Al" : "Üyeyi Aktif Yap"}
+                  {selectedMember?.status === MEMBERSHIP_STATUS.ACTIVE
+                    ? "Üyeyi Pasife Al"
+                    : "Üyeyi Aktif Yap"}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={handleDeleteMember}
-                className="bg-rose-950/60 border border-rose-600/50 py-3 rounded-xl items-center mt-1"
-              >
-                <Text className="text-rose-400 font-bold text-xs">Kulüpten Çıkar (Sil)</Text>
-              </TouchableOpacity>
+              {!isAdminView && (
+                <TouchableOpacity
+                  onPress={handleDeleteMember}
+                  className="bg-rose-950/60 border border-rose-600/50 py-3 rounded-xl items-center mt-1"
+                >
+                  <Text className="text-rose-400 font-bold text-xs">Kulüpten Çıkar (Sil)</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>

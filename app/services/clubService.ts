@@ -7,11 +7,27 @@ import {
   getDocs,
   query,
   orderBy,
+  where,
+  writeBatch,
+  deleteDoc,
+  type QueryDocumentSnapshot,
+  type DocumentData,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { CLUB_STATUS, Club, ClubStatus } from "../types";
 
 const CLUBS_COLLECTION = "clubs";
+
+// Firestore batch limiti 500; güvenli tarafta kalmak için 400'lük parçalar kullanılır.
+const deleteDocsInBatches = async (docs: QueryDocumentSnapshot<DocumentData>[]) => {
+  const CHUNK_SIZE = 400;
+
+  for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + CHUNK_SIZE).forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+  }
+};
 
 export const clubService = {
   // 1. Yeni kulüp oluşturma (Admin)
@@ -41,8 +57,7 @@ export const clubService = {
   // 3. Kulübü aktif/pasif yapma
   toggleClubStatus: async (clubId: string, mevcutDurum: ClubStatus) => {
     const clubRef = doc(db, CLUBS_COLLECTION, clubId);
-    const yeniDurum =
-      mevcutDurum === CLUB_STATUS.ACTIVE ? CLUB_STATUS.PASSIVE : CLUB_STATUS.ACTIVE;
+    const yeniDurum = mevcutDurum === CLUB_STATUS.ACTIVE ? CLUB_STATUS.PASSIVE : CLUB_STATUS.ACTIVE;
     await updateDoc(clubRef, {
       durum: yeniDurum,
     });
@@ -76,5 +91,40 @@ export const clubService = {
     await updateDoc(clubRef, {
       gorselUrl: deleteField(),
     });
+  },
+
+  // 6. Kulübü ve ona bağlı tüm kayıtları kalıcı olarak silme (Admin)
+  // Firestore'da otomatik cascade yok; ilişkili koleksiyonlar tek tek temizlenir.
+  deleteClub: async (clubId: string) => {
+    // Önce etkinlikler bulunur; yoklama kayıtları event_id üzerinden bağlıdır.
+    const eventsSnap = await getDocs(
+      query(collection(db, "events"), where("club_id", "==", clubId)),
+    );
+    const eventIds = new Set(eventsSnap.docs.map((eventDoc) => eventDoc.id));
+
+    if (eventIds.size > 0) {
+      const attendanceSnap = await getDocs(collection(db, "attendance"));
+      const relatedAttendance = attendanceSnap.docs.filter((attendanceDoc) =>
+        eventIds.has(String(attendanceDoc.data().event_id ?? "")),
+      );
+      await deleteDocsInBatches(relatedAttendance);
+    }
+
+    const dependentCollections = [
+      "memberships",
+      "join_requests",
+      "invitations",
+      "events",
+      "announcements",
+    ];
+
+    for (const collectionName of dependentCollections) {
+      const snap = await getDocs(
+        query(collection(db, collectionName), where("club_id", "==", clubId)),
+      );
+      await deleteDocsInBatches(snap.docs);
+    }
+
+    await deleteDoc(doc(db, CLUBS_COLLECTION, clubId));
   },
 };

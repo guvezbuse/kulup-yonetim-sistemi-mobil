@@ -26,9 +26,17 @@ interface Props {
   clubId: string;
   clubName: string;
   onBack: () => void;
+  // Sistem yöneticisi (kulübün yöneticisi değil) için salt görüntüleme modu.
+  // Şartname: etkinlik oluşturma/yayınlama Admin ✘ / Yönetici ✔
+  isAdminView?: boolean;
 }
 
-export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Props) {
+export default function ClubEventsManageScreen({
+  clubId,
+  clubName,
+  onBack,
+  isAdminView = false,
+}: Props) {
   const user = useAuthStore((state) => state.user);
 
   const [events, setEvents] = useState<Event[]>([]);
@@ -188,65 +196,77 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
 
       <Text className="text-2xl font-bold text-white mb-4">🗓️ Etkinlik Yönetimi</Text>
 
-      <Card className="mb-6 border border-purple-500/40">
-        <Input
-          label="Etkinlik Başlığı"
-          placeholder="Örn: Yapay Zeka Atölyesi"
-          value={eventTitle}
-          onChangeText={setEventTitle}
-        />
-
-        {/* Klavye Rakam Modu Zorlaması */}
-        <Input
-          label="Tarih ve Saat (Sadece Rakam)"
-          placeholder="Örn: 2026-11-15 14:00 veya 15.11.2026 14:00"
-          value={eventDateTime}
-          onChangeText={handleDateChange}
-          keyboardType="numbers-and-punctuation"
-        />
-
-        <Input
-          label="Konum / Salon"
-          placeholder="Örn: D-Block Konferans Salonu"
-          value={eventLocation}
-          onChangeText={setEventLocation}
-        />
-        <Input
-          label="Kontenjan (Opsiyonel)"
-          placeholder="Limitsiz için boş bırakın"
-          keyboardType="numeric"
-          value={eventQuota}
-          onChangeText={setEventQuota}
-        />
-        <Input
-          label="Açıklama"
-          placeholder="Etkinlik akışı..."
-          value={eventDesc}
-          onChangeText={setEventDesc}
-          multiline
-        />
-
-        <View className="flex-row gap-2 mt-2">
-          <TouchableOpacity
-            onPress={() => handleCreateEvent(true)}
-            disabled={eventCreating}
-            className="flex-1 bg-slate-800 border border-slate-700 py-3 rounded-xl items-center"
-          >
-            <Text className="text-slate-300 font-bold text-xs">Taslak Kaydet</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleCreateEvent(false)}
-            disabled={eventCreating}
-            className="flex-1 bg-purple-600 py-3 rounded-xl items-center"
-          >
-            {eventCreating ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text className="text-white font-bold text-xs">Etkinliği Yayınla</Text>
-            )}
-          </TouchableOpacity>
+      {isAdminView && (
+        <View className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4">
+          <Text className="text-amber-400 text-[11px] font-bold">🛡️ Salt Görüntüleme</Text>
+          <Text className="text-slate-400 text-[11px] mt-1 leading-4">
+            Sistem yöneticisi olarak kulüp etkinliği oluşturamaz veya silemezsiniz. Mevcut
+            etkinlikleri ve başvuruları inceleyebilirsiniz.
+          </Text>
         </View>
-      </Card>
+      )}
+
+      {!isAdminView && (
+        <Card className="mb-6 border border-purple-500/40">
+          <Input
+            label="Etkinlik Başlığı"
+            placeholder="Örn: Yapay Zeka Atölyesi"
+            value={eventTitle}
+            onChangeText={setEventTitle}
+          />
+
+          {/* Klavye Rakam Modu Zorlaması */}
+          <Input
+            label="Tarih ve Saat (Sadece Rakam)"
+            placeholder="Örn: 2026-11-15 14:00 veya 15.11.2026 14:00"
+            value={eventDateTime}
+            onChangeText={handleDateChange}
+            keyboardType="numbers-and-punctuation"
+          />
+
+          <Input
+            label="Konum / Salon"
+            placeholder="Örn: D-Block Konferans Salonu"
+            value={eventLocation}
+            onChangeText={setEventLocation}
+          />
+          <Input
+            label="Kontenjan (Opsiyonel)"
+            placeholder="Limitsiz için boş bırakın"
+            keyboardType="numeric"
+            value={eventQuota}
+            onChangeText={setEventQuota}
+          />
+          <Input
+            label="Açıklama"
+            placeholder="Etkinlik akışı..."
+            value={eventDesc}
+            onChangeText={setEventDesc}
+            multiline
+          />
+
+          <View className="flex-row gap-2 mt-2">
+            <TouchableOpacity
+              onPress={() => handleCreateEvent(true)}
+              disabled={eventCreating}
+              className="flex-1 bg-slate-800 border border-slate-700 py-3 rounded-xl items-center"
+            >
+              <Text className="text-slate-300 font-bold text-xs">Taslak Kaydet</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleCreateEvent(false)}
+              disabled={eventCreating}
+              className="flex-1 bg-purple-600 py-3 rounded-xl items-center"
+            >
+              {eventCreating ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text className="text-white font-bold text-xs">Etkinliği Yayınla</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Card>
+      )}
 
       <Text className="text-base font-bold text-white mb-2">
         Kulüp Etkinlikleri ({events.length})
@@ -276,12 +296,14 @@ export default function ClubEventsManageScreen({ clubId, clubName, onBack }: Pro
                 >
                   <Text className="text-white text-[10px] font-bold">📋 Başvuruları Gör</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleDeleteEvent(ev.id, title)}
-                  className="bg-rose-950/60 border border-rose-600/60 px-2 py-1.5 rounded-lg"
-                >
-                  <Text className="text-rose-400 text-[10px] font-bold">Sil</Text>
-                </TouchableOpacity>
+                {!isAdminView && (
+                  <TouchableOpacity
+                    onPress={() => handleDeleteEvent(ev.id, title)}
+                    className="bg-rose-950/60 border border-rose-600/60 px-2 py-1.5 rounded-lg"
+                  >
+                    <Text className="text-rose-400 text-[10px] font-bold">Sil</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           );

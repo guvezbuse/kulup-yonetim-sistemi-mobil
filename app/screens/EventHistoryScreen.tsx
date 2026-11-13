@@ -42,9 +42,7 @@ export default function EventHistoryScreen({ onBack }: EventHistoryScreenProps) 
       const attendedEventIds = new Set(attendance.map((record) => record.event_id));
 
       const history = allEvents
-        .filter(
-          (event) => event.katilimcilar.includes(user.uid) || attendedEventIds.has(event.id),
-        )
+        .filter((event) => event.katilimcilar.includes(user.uid) || attendedEventIds.has(event.id))
         .map((event) => ({
           ...event,
           yoklama_alindi: attendedEventIds.has(event.id),
@@ -99,12 +97,8 @@ export default function EventHistoryScreen({ onBack }: EventHistoryScreenProps) 
         </Text>
 
         <View className="flex-row items-center justify-between mt-3 pt-3 border-t border-slate-700/60">
-          <Text className="text-slate-500 text-[10px]">
-            {item.club_ad || "Genel etkinlik"}
-          </Text>
-          <Text className="text-slate-500 text-[10px]">
-            {item.katilimcilar.length} katılımcı
-          </Text>
+          <Text className="text-slate-500 text-[10px]">{item.club_ad || "Genel etkinlik"}</Text>
+          <Text className="text-slate-500 text-[10px]">{item.katilimcilar.length} katılımcı</Text>
         </View>
       </View>
     );
@@ -121,7 +115,7 @@ export default function EventHistoryScreen({ onBack }: EventHistoryScreenProps) 
         <Text className="text-slate-400 text-xs font-bold uppercase">Kişisel Geçmiş</Text>
       </View>
 
-      <Text className="text-2xl font-bold text-white">Etkinlik Geçmişi</Text>
+      <Text className="text-2xl font-bold text-white">Etkinliklerim</Text>
       <Text className="text-slate-400 text-xs mt-1">
         Katıldığınız etkinlikler ve yoklama kayıtlarınız
       </Text>
@@ -132,9 +126,7 @@ export default function EventHistoryScreen({ onBack }: EventHistoryScreenProps) 
           <Text className="text-white text-xl font-bold mt-0.5">{events.length}</Text>
         </View>
         <View className="flex-1 bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3">
-          <Text className="text-emerald-400/80 text-[10px] uppercase font-semibold">
-            Yoklama
-          </Text>
+          <Text className="text-emerald-400/80 text-[10px] uppercase font-semibold">Yoklama</Text>
           <Text className="text-emerald-300 text-xl font-bold mt-0.5">{checkedInCount}</Text>
         </View>
       </View>

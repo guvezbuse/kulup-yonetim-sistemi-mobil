@@ -100,8 +100,10 @@ export default function ClubsScreen({
     const bannerUrl = item.gorselUrl || DEFAULT_BANNER;
 
     return (
-      <TouchableOpacity onPress={() => onSelectClub(item)} activeOpacity={0.8} className="mb-4">
-        <Card className="p-0 overflow-hidden border border-slate-800 bg-slate-800/80">
+      <Card className="mb-4 p-0 overflow-hidden border border-slate-800 bg-slate-800/80">
+        {/* Kartın gövdesi detaya gider. Admin butonları bu alanın DIŞINDA durur;
+            böylece "Yönet"e basınca kartın onPress'i de tetiklenmez. */}
+        <TouchableOpacity onPress={() => onSelectClub(item)} activeOpacity={0.8}>
           <View className="h-32 w-full relative">
             <Image source={{ uri: bannerUrl }} className="w-full h-full" resizeMode="cover" />
             {/* Kulüp Durum Rozeti */}
@@ -116,51 +118,45 @@ export default function ClubsScreen({
             </View>
           </View>
 
-          <View className="p-4">
+          <View className="p-4 pb-3">
             <Text className="text-white font-bold text-lg">{item.ad}</Text>
             <Text className="text-slate-400 text-xs mt-1 leading-4" numberOfLines={2}>
               {item.aciklama}
             </Text>
+          </View>
+        </TouchableOpacity>
 
-            {/* Admin Yönetim Butonları */}
-            {isSystemAdmin && (
-              <View className="flex-row justify-end items-center gap-2 mt-3 pt-3 border-t border-slate-700/60">
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleToggleClubStatus(item);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg border ${
-                    item.durum === CLUB_STATUS.PASSIVE
-                      ? "border-emerald-500/50 bg-emerald-950/30"
-                      : "border-rose-500/50 bg-rose-950/30"
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-semibold ${
-                      item.durum === CLUB_STATUS.PASSIVE ? "text-emerald-400" : "text-rose-400"
-                    }`}
-                  >
-                    {item.durum === CLUB_STATUS.PASSIVE ? "Aktif Et" : "Pasife Al"}
-                  </Text>
-                </TouchableOpacity>
+        {/* Admin Yönetim Butonları */}
+        {isSystemAdmin && (
+          <View className="flex-row justify-end items-center gap-2 px-4 pb-4 pt-3 border-t border-slate-700/60">
+            <TouchableOpacity
+              onPress={() => handleToggleClubStatus(item)}
+              className={`px-3 py-1.5 rounded-lg border ${
+                item.durum === CLUB_STATUS.PASSIVE
+                  ? "border-emerald-500/50 bg-emerald-950/30"
+                  : "border-rose-500/50 bg-rose-950/30"
+              }`}
+            >
+              <Text
+                className={`text-xs font-semibold ${
+                  item.durum === CLUB_STATUS.PASSIVE ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                {item.durum === CLUB_STATUS.PASSIVE ? "Aktif Et" : "Pasife Al"}
+              </Text>
+            </TouchableOpacity>
 
-                {onManageClub && (
-                  <TouchableOpacity
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      onManageClub(item);
-                    }}
-                    className="bg-indigo-600 px-3 py-1.5 rounded-lg"
-                  >
-                    <Text className="text-white text-xs font-semibold">⚙️ Yönet</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+            {onManageClub && (
+              <TouchableOpacity
+                onPress={() => onManageClub(item)}
+                className="bg-indigo-600 px-3 py-1.5 rounded-lg"
+              >
+                <Text className="text-white text-xs font-semibold">⚙️ Yönet</Text>
+              </TouchableOpacity>
             )}
           </View>
-        </Card>
-      </TouchableOpacity>
+        )}
+      </Card>
     );
   };
 

@@ -225,9 +225,7 @@ export default function ProfileScreen({
           className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-2xl mb-4"
         >
           <Text className="text-amber-400 font-bold text-sm">👥 Kullanıcı Yönetimi</Text>
-          <Text className="text-slate-400 text-xs mt-0.5">
-            Kullanıcıları listeleyin, admin yetkisi verin veya kaldırın.
-          </Text>
+          <Text className="text-slate-400 text-xs mt-0.5">Kullanıcıları listeleyin.</Text>
         </TouchableOpacity>
       )}
 
@@ -262,7 +260,7 @@ export default function ProfileScreen({
           activeOpacity={0.8}
           className="bg-slate-800 border border-slate-700 p-4 rounded-2xl mb-4"
         >
-          <Text className="text-white font-bold text-sm">📜 Katılınan Etkinlik Geçmişi</Text>
+          <Text className="text-white font-bold text-sm">📜 Etkinliklerim</Text>
           <Text className="text-slate-400 text-xs mt-0.5">
             Katıldığınız etkinlikleri ve yoklama durumlarını görüntüleyin.
           </Text>
@@ -290,14 +288,6 @@ export default function ProfileScreen({
           </TouchableOpacity>
         </View>
       )}
-
-      <View className="bg-indigo-500/10 border border-indigo-500/25 p-4 rounded-2xl">
-        <Text className="text-indigo-300 text-xs font-semibold">💡 Profil İpucu</Text>
-        <Text className="text-slate-400 text-[11px] mt-1 leading-4">
-          Profil fotoğrafınız ve bilgileriniz hesabınıza bağlı olarak saklanır. Farklı bir cihazda
-          giriş yaptığınızda da görünür.
-        </Text>
-      </View>
     </ScrollView>
   );
 }
